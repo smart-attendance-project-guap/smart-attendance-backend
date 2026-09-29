@@ -1,0 +1,93 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  STUDENT
+  TEACHER
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  REJECTED
+}
+
+model User {
+  id          Int          @id @default(autoincrement())
+  email       String       @unique
+  password    String
+  firstName   String
+  lastName    String
+  role        UserRole
+  groupId     Int?
+  group       Group?       @relation(fields: [groupId], references: [id])
+  lessons     Lesson[]
+  attendances Attendance[]
+  devices     Device[]
+  createdAt   DateTime     @default(now())
+  telegramId String? @unique
+}
+
+model Group {
+  id      Int    @id @default(autoincrement())
+  name    String @unique
+  users   User[]
+  lessons Lesson[]
+}
+
+model Classroom {
+  id        Int    @id @default(autoincrement())
+  name      String
+  latitude  Float
+  longitude Float
+  lessons   Lesson[]
+}
+
+model Lesson {
+  id          Int          @id @default(autoincrement())
+  teacherId   Int
+  groupId     Int
+  classroomId Int
+  startsAt    DateTime
+  endsAt      DateTime
+  finishedAt  DateTime?
+  qrToken     String?   @unique
+  qrExpiresAt DateTime?
+
+  teacher     User         @relation(fields: [teacherId], references: [id])
+  group       Group        @relation(fields: [groupId], references: [id])
+  classroom   Classroom    @relation(fields: [classroomId], references: [id])
+  attendances Attendance[]
+}
+
+model Attendance {
+  id               Int              @id @default(autoincrement())
+  studentId        Int
+  lessonId         Int
+  status           AttendanceStatus
+  markedAt         DateTime         @default(now())
+  faceChecked      Boolean          @default(false)
+  deviceChecked    Boolean          @default(false)
+  locationChecked  Boolean          @default(false)
+  rejectionReason  String?
+  reviewed         Boolean          @default(false)
+  reviewedAt       DateTime?
+
+  student          User             @relation(fields: [studentId], references: [id])
+  lesson           Lesson           @relation(fields: [lessonId], references: [id])
+}
+
+model Device {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  deviceToken String   @unique
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id])
+}

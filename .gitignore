@@ -1,3 +1,16 @@
-node_modules/
+﻿node_modules/
 .env
 dist/
+src/generated/prisma
+
+# TypeScript build files
+src/**/*.js
+src/**/*.d.ts
+src/**/*.js.map
+src/**/*.d.ts.map
+
+# Prisma config build files
+prisma7.config.js
+prisma7.config.d.ts
+prisma7.config.js.map
+prisma7.config.d.ts.map
