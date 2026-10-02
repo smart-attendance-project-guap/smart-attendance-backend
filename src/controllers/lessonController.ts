@@ -2,6 +2,7 @@ import type { Response } from "express";
 import { prisma } from "../prisma.js";
 import type { AuthRequest } from "../middleware/authMiddleware.js";
 import { nanoid } from "nanoid";
+import { redisClient } from "../redis.js";
 
 export async function createLesson(req: AuthRequest, res: Response) {
   try {
@@ -203,6 +204,13 @@ export async function generateLessonQr(req: AuthRequest, res: Response) {
 
     const qrToken = nanoid(32);
     const qrExpiresAt = new Date(Date.now() + 15 * 1000);
+    await redisClient.set(
+      `lesson:${lessonId}:qr`,
+      qrToken,
+      {
+        EX: 15,
+      },
+    );
 
     const updatedLesson = await prisma.lesson.update({
       where: {
@@ -269,21 +277,17 @@ export async function validateLessonQr(req: AuthRequest, res: Response) {
       });
     }
 
-    if (!lesson.qrToken || !lesson.qrExpiresAt) {
+    const activeQrToken = await redisClient.get(`lesson:${lessonId}:qr`);
+
+    if (!activeQrToken) {
       return res.status(400).json({
         message: "QR code is not active",
       });
     }
 
-    if (lesson.qrToken !== qrToken) {
+    if (activeQrToken !== qrToken) {
       return res.status(400).json({
         message: "Invalid QR token",
-      });
-    }
-
-    if (lesson.qrExpiresAt <= new Date()) {
-      return res.status(400).json({
-        message: "QR code has expired",
       });
     }
 
