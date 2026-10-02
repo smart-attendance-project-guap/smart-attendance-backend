@@ -7,6 +7,7 @@ import { prisma } from "./prisma.js";
 import authRoutes from "./routes/authRoutes.js";
 import lessonRoutes from "./routes/lessonRoutes.js";
 import attendanceRoutes from "./routes/attendanceRoutes.js";
+import { connectRedis } from "./redis.js";
 
 const app = express();
 const PORT = 3000;
@@ -50,7 +51,14 @@ app.get("/api/db-test", async (req, res) => {
   }
 });
 
-httpServer.listen(PORT, () => {
-  console.log(`Backend started on http://localhost:${PORT}`);
-  console.log(`WebSocket available at ws://localhost:${PORT}/ws`);
-});
+connectRedis()
+  .then(() => {
+    httpServer.listen(PORT, () => {
+      console.log(`Backend started on http://localhost:${PORT}`);
+      console.log(`WebSocket available at ws://localhost:${PORT}/ws`);
+    });
+  })
+  .catch((error) => {
+    console.error("Failed to connect to Redis:", error);
+    process.exit(1);
+  });
