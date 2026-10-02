@@ -5,7 +5,7 @@ import { generateToken } from "../utils/jwt.js";
 
 export async function register(req: Request, res: Response) {
   try {
-    const { email, password, firstName, lastName, role } = req.body;
+    const { email, password, firstName, lastName, role, groupId } = req.body;
 
     if (!email || !password || !firstName || !lastName || !role) {
       return res.status(400).json({
@@ -32,6 +32,7 @@ export async function register(req: Request, res: Response) {
         firstName,
         lastName,
         role,
+        groupId: groupId ? Number(groupId) : null,
       },
     });
 
