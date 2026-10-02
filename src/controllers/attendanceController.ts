@@ -1,5 +1,6 @@
 import type { Response } from "express";
 import { prisma } from "../prisma.js";
+import { broadcast } from "../websocket.js";
 import type { AuthRequest } from "../middleware/authMiddleware.js";
 
 export async function markAttendance(req: AuthRequest, res: Response) {
@@ -119,6 +120,15 @@ export async function markAttendance(req: AuthRequest, res: Response) {
         deviceChecked: false,
         locationChecked: false,
       },
+    });
+
+    broadcast({
+      type: "attendance.created",
+      lessonId: lesson.id,
+      attendanceId: attendance.id,
+      studentId: student.id,
+      status: attendance.status,
+      markedAt: attendance.markedAt,
     });
 
     return res.status(201).json({
