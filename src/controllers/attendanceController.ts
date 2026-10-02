@@ -122,7 +122,7 @@ export async function markAttendance(req: AuthRequest, res: Response) {
       },
     });
 
-    broadcast({
+    await broadcast({
       type: "attendance.created",
       lessonId: lesson.id,
       attendanceId: attendance.id,
