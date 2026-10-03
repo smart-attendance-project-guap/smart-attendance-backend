@@ -1,7 +1,9 @@
 import type { Response } from "express";
 import { prisma } from "../prisma.js";
+import { redisClient } from "../redis.js";
 import { broadcast } from "../websocket.js";
 import type { AuthRequest } from "../middleware/authMiddleware.js";
+import { Prisma } from "../generated/prisma/client.js";
 
 export async function markAttendance(req: AuthRequest, res: Response) {
   try {
@@ -20,15 +22,18 @@ export async function markAttendance(req: AuthRequest, res: Response) {
     const lessonId = Number(req.params.id);
     const { qrToken } = req.body;
 
-    if (!lessonId) {
+    if (!Number.isInteger(lessonId) || lessonId <= 0) {
       return res.status(400).json({
         message: "Invalid lesson id",
       });
     }
 
-    if (!qrToken) {
+    if (
+      typeof qrToken !== "string" ||
+      !qrToken.trim()
+    ) {
       return res.status(400).json({
-        message: "qrToken is required",
+        message: "qrToken must be a non-empty string",
       });
     }
 
@@ -74,21 +79,19 @@ export async function markAttendance(req: AuthRequest, res: Response) {
       });
     }
 
-    if (!lesson.qrToken || !lesson.qrExpiresAt) {
+    const activeQrToken = await redisClient.get(
+      `lesson:${lessonId}:qr`,
+    );
+
+    if (!activeQrToken) {
       return res.status(400).json({
         message: "QR code is not active",
       });
     }
 
-    if (lesson.qrToken !== qrToken) {
+    if (activeQrToken !== qrToken.trim()) {
       return res.status(400).json({
         message: "Invalid QR token",
-      });
-    }
-
-    if (lesson.qrExpiresAt <= new Date()) {
-      return res.status(400).json({
-        message: "QR code has expired",
       });
     }
 
@@ -106,16 +109,11 @@ export async function markAttendance(req: AuthRequest, res: Response) {
       });
     }
 
-    const status =
-      new Date() > lesson.startsAt
-        ? "LATE"
-        : "PRESENT";
-
     const attendance = await prisma.attendance.create({
       data: {
         studentId: student.id,
         lessonId: lesson.id,
-        status,
+        status: "PENDING",
         faceChecked: false,
         deviceChecked: false,
         locationChecked: false,
@@ -136,6 +134,15 @@ export async function markAttendance(req: AuthRequest, res: Response) {
       attendance,
     });
   } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return res.status(409).json({
+        message: "Attendance already marked",
+      });
+    }
+
     console.error(error);
 
     return res.status(500).json({
@@ -301,7 +308,7 @@ export async function getLessonAttendance(
 
     const lessonId = Number(req.params.id);
 
-    if (!lessonId) {
+    if (!Number.isInteger(lessonId) || lessonId <= 0) {
       return res.status(400).json({
         message: "Invalid lesson id",
       });
@@ -357,12 +364,18 @@ export async function getLessonAttendance(
       },
     });
 
-    const presentStudentIds = new Set(
-      attendances.map((attendance) => attendance.studentId),
+    const attendedStudentIds = new Set(
+      attendances
+        .filter(
+          (attendance) =>
+            attendance.status === "PRESENT" ||
+            attendance.status === "LATE",
+        )
+        .map((attendance) => attendance.studentId),
     );
 
     const absentStudents = students.filter(
-      (student) => !presentStudentIds.has(student.id),
+      (student) => !attendedStudentIds.has(student.id),
     );
 
     return res.json({
@@ -401,6 +414,7 @@ export async function getSuspiciousAttendance(
         lesson: {
           teacherId: req.user.userId,
         },
+        reviewed: false,
         OR: [
           {
             faceChecked: false,
@@ -465,7 +479,7 @@ export async function approveAttendance(
 
     const attendanceId = Number(req.params.id);
 
-    if (!attendanceId) {
+    if (!Number.isInteger(attendanceId) || attendanceId <= 0) {
       return res.status(400).json({
         message: "Invalid attendance id",
       });
@@ -503,11 +517,27 @@ export async function approveAttendance(
         id: attendance.id,
       },
       data: {
-        status: "PRESENT",
+        status:
+          attendance.markedAt > attendance.lesson.startsAt
+            ? "LATE"
+            : "PRESENT",
         reviewed: true,
         reviewedAt: new Date(),
         rejectionReason: null,
       },
+    });
+
+    await broadcast({
+      type: "attendance.updated",
+      lessonId: updatedAttendance.lessonId,
+      attendanceId: updatedAttendance.id,
+      studentId: updatedAttendance.studentId,
+      status: updatedAttendance.status,
+      faceChecked: updatedAttendance.faceChecked,
+      deviceChecked: updatedAttendance.deviceChecked,
+      locationChecked: updatedAttendance.locationChecked,
+      reviewed: updatedAttendance.reviewed,
+      rejectionReason: updatedAttendance.rejectionReason,
     });
 
     return res.json({
@@ -543,15 +573,18 @@ export async function rejectAttendance(
     const attendanceId = Number(req.params.id);
     const { rejectionReason } = req.body;
 
-    if (!attendanceId) {
+    if (!Number.isInteger(attendanceId) || attendanceId <= 0) {
       return res.status(400).json({
         message: "Invalid attendance id",
       });
     }
 
-    if (!rejectionReason) {
+    if (
+      typeof rejectionReason !== "string" ||
+      !rejectionReason.trim()
+    ) {
       return res.status(400).json({
-        message: "rejectionReason is required",
+        message: "rejectionReason must be a non-empty string",
       });
     }
 
@@ -590,8 +623,21 @@ export async function rejectAttendance(
         status: "REJECTED",
         reviewed: true,
         reviewedAt: new Date(),
-        rejectionReason,
+        rejectionReason: rejectionReason.trim(),
       },
+    });
+
+    await broadcast({
+      type: "attendance.updated",
+      lessonId: updatedAttendance.lessonId,
+      attendanceId: updatedAttendance.id,
+      studentId: updatedAttendance.studentId,
+      status: updatedAttendance.status,
+      faceChecked: updatedAttendance.faceChecked,
+      deviceChecked: updatedAttendance.deviceChecked,
+      locationChecked: updatedAttendance.locationChecked,
+      reviewed: updatedAttendance.reviewed,
+      rejectionReason: updatedAttendance.rejectionReason,
     });
 
     return res.json({
@@ -852,7 +898,6 @@ export async function getTeacherGroupStats(
     });
   }
 }
-
 export async function updateAttendanceChecks(
   req: AuthRequest,
   res: Response,
@@ -872,7 +917,7 @@ export async function updateAttendanceChecks(
 
     const attendanceId = Number(req.params.id);
 
-    if (!attendanceId) {
+    if (!Number.isInteger(attendanceId) || attendanceId <= 0) {
       return res.status(400).json({
         message: "Invalid attendance id",
       });
@@ -895,9 +940,22 @@ export async function updateAttendanceChecks(
       });
     }
 
+    if (
+      rejectionReason !== undefined &&
+      rejectionReason !== null &&
+      typeof rejectionReason !== "string"
+    ) {
+      return res.status(400).json({
+        message: "rejectionReason must be a string",
+      });
+    }
+
     const attendance = await prisma.attendance.findUnique({
       where: {
         id: attendanceId,
+      },
+      include: {
+        lesson: true,
       },
     });
 
@@ -924,6 +982,17 @@ export async function updateAttendanceChecks(
       deviceChecked &&
       locationChecked;
 
+    let status: "PRESENT" | "LATE" | "REJECTED";
+
+    if (allChecksPassed) {
+      status =
+        attendance.markedAt > attendance.lesson.startsAt
+          ? "LATE"
+          : "PRESENT";
+    } else {
+      status = "REJECTED";
+    }
+
     const updatedAttendance = await prisma.attendance.update({
       where: {
         id: attendanceId,
@@ -932,14 +1001,27 @@ export async function updateAttendanceChecks(
         faceChecked,
         deviceChecked,
         locationChecked,
-        status: allChecksPassed ? "PRESENT" : "REJECTED",
+        status,
         rejectionReason: allChecksPassed
           ? null
           : rejectionReason || "One or more checks failed",
       },
     });
 
-    return res.json({
+    await broadcast({
+      type: "attendance.updated",
+      lessonId: updatedAttendance.lessonId,
+      attendanceId: updatedAttendance.id,
+      studentId: updatedAttendance.studentId,
+      status: updatedAttendance.status,
+      faceChecked: updatedAttendance.faceChecked,
+      deviceChecked: updatedAttendance.deviceChecked,
+      locationChecked: updatedAttendance.locationChecked,
+      reviewed: updatedAttendance.reviewed,
+      rejectionReason: updatedAttendance.rejectionReason,
+    });
+
+    return res.status(200).json({
       message: "Attendance checks updated",
       attendance: updatedAttendance,
     });

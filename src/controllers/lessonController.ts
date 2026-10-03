@@ -20,15 +20,52 @@ export async function createLesson(req: AuthRequest, res: Response) {
 
     const { groupId, classroomId, startsAt, endsAt } = req.body;
 
-    if (!groupId || !classroomId || !startsAt || !endsAt) {
+    if (
+      groupId === undefined ||
+      classroomId === undefined ||
+      startsAt === undefined ||
+      endsAt === undefined
+    ) {
       return res.status(400).json({
         message: "groupId, classroomId, startsAt and endsAt are required",
       });
     }
 
+    const normalizedGroupId = Number(groupId);
+    const normalizedClassroomId = Number(classroomId);
+
+    if (
+      !Number.isInteger(normalizedGroupId) ||
+      normalizedGroupId <= 0
+    ) {
+      return res.status(400).json({
+        message: "Invalid groupId",
+      });
+    }
+
+    if (
+      !Number.isInteger(normalizedClassroomId) ||
+      normalizedClassroomId <= 0
+    ) {
+      return res.status(400).json({
+        message: "Invalid classroomId",
+      });
+    }
+
+    if (
+      typeof startsAt !== "string" ||
+      typeof endsAt !== "string" ||
+      !startsAt.trim() ||
+      !endsAt.trim()
+    ) {
+      return res.status(400).json({
+        message: "startsAt and endsAt must be valid date strings",
+      });
+    }
+
     const group = await prisma.group.findUnique({
       where: {
-        id: Number(groupId),
+        id: normalizedGroupId,
       },
     });
 
@@ -40,7 +77,7 @@ export async function createLesson(req: AuthRequest, res: Response) {
 
     const classroom = await prisma.classroom.findUnique({
       where: {
-        id: Number(classroomId),
+        id: normalizedClassroomId,
       },
     });
 
@@ -68,8 +105,8 @@ export async function createLesson(req: AuthRequest, res: Response) {
     const lesson = await prisma.lesson.create({
       data: {
         teacherId: req.user.userId,
-        groupId: Number(groupId),
-        classroomId: Number(classroomId),
+        groupId: normalizedGroupId,
+        classroomId: normalizedClassroomId,
         startsAt: start,
         endsAt: end,
       },
@@ -104,7 +141,7 @@ export async function finishLesson(req: AuthRequest, res: Response) {
 
     const lessonId = Number(req.params.id);
 
-    if (!lessonId) {
+    if (!Number.isInteger(lessonId) || lessonId <= 0) {
       return res.status(400).json({
         message: "Invalid lesson id",
       });
@@ -156,7 +193,10 @@ export async function finishLesson(req: AuthRequest, res: Response) {
   }
 }
 
-export async function generateLessonQr(req: AuthRequest, res: Response) {
+export async function generateLessonQr(
+  req: AuthRequest,
+  res: Response,
+) {
   try {
     if (!req.user) {
       return res.status(401).json({
@@ -172,7 +212,7 @@ export async function generateLessonQr(req: AuthRequest, res: Response) {
 
     const lessonId = Number(req.params.id);
 
-    if (!lessonId) {
+    if (!Number.isInteger(lessonId) || lessonId <= 0) {
       return res.status(400).json({
         message: "Invalid lesson id",
       });
@@ -204,6 +244,7 @@ export async function generateLessonQr(req: AuthRequest, res: Response) {
 
     const qrToken = nanoid(32);
     const qrExpiresAt = new Date(Date.now() + 15 * 1000);
+
     await redisClient.set(
       `lesson:${lessonId}:qr`,
       qrToken,
@@ -236,7 +277,10 @@ export async function generateLessonQr(req: AuthRequest, res: Response) {
   }
 }
 
-export async function validateLessonQr(req: AuthRequest, res: Response) {
+export async function validateLessonQr(
+  req: AuthRequest,
+  res: Response,
+) {
   try {
     if (!req.user) {
       return res.status(401).json({
@@ -247,13 +291,16 @@ export async function validateLessonQr(req: AuthRequest, res: Response) {
     const lessonId = Number(req.params.id);
     const { qrToken } = req.body;
 
-    if (!lessonId) {
+    if (!Number.isInteger(lessonId) || lessonId <= 0) {
       return res.status(400).json({
         message: "Invalid lesson id",
       });
     }
 
-    if (!qrToken) {
+    if (
+      typeof qrToken !== "string" ||
+      !qrToken.trim()
+    ) {
       return res.status(400).json({
         message: "qrToken is required",
       });
@@ -277,7 +324,9 @@ export async function validateLessonQr(req: AuthRequest, res: Response) {
       });
     }
 
-    const activeQrToken = await redisClient.get(`lesson:${lessonId}:qr`);
+    const activeQrToken = await redisClient.get(
+      `lesson:${lessonId}:qr`,
+    );
 
     if (!activeQrToken) {
       return res.status(400).json({

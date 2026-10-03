@@ -7,14 +7,85 @@ export async function register(req: Request, res: Response) {
   try {
     const { email, password, firstName, lastName, role, groupId } = req.body;
 
-    if (!email || !password || !firstName || !lastName || !role) {
+    // Проверяем типы обязательных полей
+    if (
+      typeof email !== "string" ||
+      typeof password !== "string" ||
+      typeof firstName !== "string" ||
+      typeof lastName !== "string" ||
+      typeof role !== "string"
+    ) {
+      return res.status(400).json({
+        message: "Invalid registration data",
+      });
+    }
+
+    // Убираем случайные пробелы
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedFirstName = firstName.trim();
+    const normalizedLastName = lastName.trim();
+
+    // Проверяем, что обязательные строки не пустые
+    if (
+      !normalizedEmail ||
+      !password ||
+      !normalizedFirstName ||
+      !normalizedLastName ||
+      !role
+    ) {
       return res.status(400).json({
         message: "All fields are required",
       });
     }
 
+    // Базовая проверка формата email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(normalizedEmail)) {
+      return res.status(400).json({
+        message: "Invalid email format",
+      });
+    }
+
+    // Разрешаем только роли из нашей системы
+    if (role !== "STUDENT" && role !== "TEACHER") {
+      return res.status(400).json({
+        message: "Role must be STUDENT or TEACHER",
+      });
+    }
+
+    let normalizedGroupId: number | null = null;
+
+    // Группа относится к студенту
+    if (role === "STUDENT" && groupId !== undefined && groupId !== null) {
+      normalizedGroupId = Number(groupId);
+
+      if (
+        !Number.isInteger(normalizedGroupId) ||
+        normalizedGroupId <= 0
+      ) {
+        return res.status(400).json({
+          message: "Invalid groupId",
+        });
+      }
+
+      const group = await prisma.group.findUnique({
+        where: {
+          id: normalizedGroupId,
+        },
+      });
+
+      if (!group) {
+        return res.status(400).json({
+          message: "Group not found",
+        });
+      }
+    }
+
     const existingUser = await prisma.user.findUnique({
-      where: { email },
+      where: {
+        email: normalizedEmail,
+      },
     });
 
     if (existingUser) {
@@ -27,12 +98,12 @@ export async function register(req: Request, res: Response) {
 
     const user = await prisma.user.create({
       data: {
-        email,
+        email: normalizedEmail,
         password: hashedPassword,
-        firstName,
-        lastName,
+        firstName: normalizedFirstName,
+        lastName: normalizedLastName,
         role,
-        groupId: groupId ? Number(groupId) : null,
+        groupId: role === "STUDENT" ? normalizedGroupId : null,
       },
     });
 
@@ -44,6 +115,7 @@ export async function register(req: Request, res: Response) {
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
+        groupId: user.groupId,
       },
     });
   } catch (error) {
@@ -59,14 +131,27 @@ export async function login(req: Request, res: Response) {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
+    if (
+      typeof email !== "string" ||
+      typeof password !== "string"
+    ) {
+      return res.status(400).json({
+        message: "Email and password are required",
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail || !password) {
       return res.status(400).json({
         message: "Email and password are required",
       });
     }
 
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: {
+        email: normalizedEmail,
+      },
     });
 
     if (!user) {
@@ -75,7 +160,10 @@ export async function login(req: Request, res: Response) {
       });
     }
 
-    const passwordMatch = await comparePassword(password, user.password);
+    const passwordMatch = await comparePassword(
+      password,
+      user.password,
+    );
 
     if (!passwordMatch) {
       return res.status(401).json({
@@ -85,7 +173,7 @@ export async function login(req: Request, res: Response) {
 
     const token = generateToken(user.id, user.role);
 
-    return res.json({
+    return res.status(200).json({
       message: "Login successful",
       token,
       user: {
@@ -94,6 +182,7 @@ export async function login(req: Request, res: Response) {
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
+        groupId: user.groupId,
       },
     });
   } catch (error) {

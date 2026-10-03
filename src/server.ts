@@ -1,13 +1,16 @@
 import "dotenv/config";
-import { authMiddleware, type AuthRequest } from "./middleware/authMiddleware.js";
 import express from "express";
 import { createServer } from "node:http";
+
+import { authMiddleware, type AuthRequest } from "./middleware/authMiddleware.js";
 import { setupWebSocket } from "./websocket.js";
 import { prisma } from "./prisma.js";
+import { connectRedis } from "./redis.js";
+
 import authRoutes from "./routes/authRoutes.js";
 import lessonRoutes from "./routes/lessonRoutes.js";
 import attendanceRoutes from "./routes/attendanceRoutes.js";
-import { connectRedis } from "./redis.js";
+import referenceRoutes from "./routes/referenceRoutes.js";
 
 const app = express();
 const PORT = 3000;
@@ -16,9 +19,12 @@ const httpServer = createServer(app);
 setupWebSocket(httpServer);
 
 app.use(express.json());
+
 app.use("/api/auth", authRoutes);
 app.use("/api/lessons", lessonRoutes);
 app.use("/api/attendance", attendanceRoutes);
+app.use("/api", referenceRoutes);
+
 app.get("/api/protected", authMiddleware, (req: AuthRequest, res) => {
   res.json({
     message: "Access granted",
