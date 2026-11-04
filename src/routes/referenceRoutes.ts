@@ -4,9 +4,8 @@ import { authMiddleware } from "../middleware/authMiddleware.js";
 
 const router = Router();
 
-router.use(authMiddleware);
 
-router.get("/groups", async (req, res) => {
+router.get("/groups", authMiddleware, async (req, res) => {
   try {
     const groups = await prisma.group.findMany({
       orderBy: {
@@ -26,7 +25,7 @@ router.get("/groups", async (req, res) => {
   }
 });
 
-router.get("/classrooms", async (req, res) => {
+router.get("/classrooms", authMiddleware, async (req, res) => {
   try {
     const classrooms = await prisma.classroom.findMany({
       orderBy: {

@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import cors from "cors";
 import { createServer } from "node:http";
 
 import { authMiddleware, type AuthRequest } from "./middleware/authMiddleware.js";
@@ -17,6 +18,10 @@ const PORT = 3000;
 
 const httpServer = createServer(app);
 setupWebSocket(httpServer);
+
+app.use(cors({
+  origin: "http://localhost:3001",
+}));
 
 app.use(express.json());
 
