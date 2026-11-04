@@ -55,6 +55,7 @@ model Lesson {
   teacherId   Int
   groupId     Int
   classroomId Int
+  discipline String?
   startsAt    DateTime
   endsAt      DateTime
   finishedAt  DateTime?

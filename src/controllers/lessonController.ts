@@ -18,8 +18,13 @@ export async function createLesson(req: AuthRequest, res: Response) {
       });
     }
 
-    const { groupId, classroomId, startsAt, endsAt } = req.body;
+    const { discipline, groupId, classroomId, startsAt, endsAt } = req.body;
 
+    if (typeof discipline !== "string" || !discipline.trim()) {
+      return res.status(400).json({
+        message: "discipline is required",
+      });
+    }
     if (
       groupId === undefined ||
       classroomId === undefined ||
@@ -105,6 +110,7 @@ export async function createLesson(req: AuthRequest, res: Response) {
     const lesson = await prisma.lesson.create({
       data: {
         teacherId: req.user.userId,
+        discipline: discipline.trim(),
         groupId: normalizedGroupId,
         classroomId: normalizedClassroomId,
         startsAt: start,
