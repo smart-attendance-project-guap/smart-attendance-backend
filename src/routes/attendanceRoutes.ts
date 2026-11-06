@@ -2,6 +2,7 @@ import { Router } from "express";
 import { authMiddleware } from "../middleware/authMiddleware.js";
 import {
   markAttendance,
+  getMissedLessons,
   getAttendanceHistory,
   getAttendanceStats,
   getLessonAttendance,
@@ -17,6 +18,7 @@ import {
 const router = Router();
 
 router.post("/:id/mark", authMiddleware, markAttendance);
+router.get("/missed", authMiddleware, getMissedLessons);
 router.get("/history", authMiddleware, getAttendanceHistory);
 router.get("/stats", authMiddleware, getAttendanceStats);
 router.get("/teacher/stats", authMiddleware, getTeacherAttendanceStats);

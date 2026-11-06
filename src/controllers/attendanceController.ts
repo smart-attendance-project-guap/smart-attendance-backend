@@ -151,6 +151,89 @@ export async function markAttendance(req: AuthRequest, res: Response) {
   }
 }
 
+export async function getMissedLessons(
+  req: AuthRequest,
+  res: Response,
+) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
+    }
+
+    if (req.user.role !== "STUDENT") {
+      return res.status(403).json({
+        message: "Only students can view missed lessons",
+      });
+    }
+
+    const student = await prisma.user.findUnique({
+      where: {
+        id: req.user.userId,
+      },
+    });
+
+    if (!student) {
+      return res.status(404).json({
+        message: "Student not found",
+      });
+    }
+
+    if (!student.groupId) {
+      return res.status(400).json({
+        message: "Student is not assigned to a group",
+      });
+    }
+
+    const missedLessons = await prisma.lesson.findMany({
+      where: {
+        groupId: student.groupId,
+        finishedAt: {
+          not: null,
+        },
+        attendances: {
+          none: {
+            studentId: student.id,
+          },
+        },
+      },
+      select: {
+        id: true,
+        discipline: true,
+        startsAt: true,
+        endsAt: true,
+        finishedAt: true,
+        group: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        classroom: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        startsAt: "desc",
+      },
+    });
+
+    return res.status(200).json({
+      missedLessons,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Failed to get missed lessons",
+    });
+  }
+}
+
 export async function getAttendanceHistory(
   req: AuthRequest,
   res: Response,
