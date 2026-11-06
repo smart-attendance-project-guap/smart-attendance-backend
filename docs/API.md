@@ -733,3 +733,127 @@ Frontend может периодически запрашивать
 
 Адресная отправка WebSocket-событий
 студентам пока не реализована.
+
+
+## Привязка Telegram
+
+Backend поддерживает привязку Telegram-аккаунта
+к аккаунту студента.
+
+### POST /api/telegram/link/start
+
+Доступ: STUDENT, требуется JWT.
+
+Создаёт одноразовый код на 5 минут.
+
+Ответ 200:
+
+{
+  "status": "WAITING_BOT",
+  "linkUrl": "https://t.me/BOT_USERNAME?start=CODE",
+  "expiresAt": "2026-11-06T19:58:55.292Z"
+}
+
+Если Telegram уже привязан — HTTP 409.
+
+### GET /api/telegram/link/status
+
+Доступ: STUDENT, требуется JWT.
+
+Возможные статусы:
+
+- NOT_STARTED — активной заявки нет;
+- WAITING_BOT — ожидается обращение бота;
+- AWAITING_CONFIRMATION — ожидается подтверждение студента;
+- LINKED — Telegram привязан.
+
+При AWAITING_CONFIRMATION возвращаются Telegram ID,
+username, firstName и expiresAt.
+
+### POST /api/telegram/link/confirm
+
+Доступ: STUDENT, требуется JWT.
+
+Подтверждает привязку Telegram-аккаунта,
+ранее переданного ботом.
+
+Тело запроса не требуется.
+
+Ответ 200:
+
+{
+  "status": "LINKED",
+  "telegram": {
+    "id": "123456789",
+    "username": "student_user"
+  }
+}
+
+Если заявка не готова или истекла — HTTP 409
+с кодом LINK_NOT_READY.
+
+Если Telegram уже привязан — HTTP 409.
+
+
+## Служебный API Telegram-бота
+
+### POST /api/internal/telegram/link/claim
+
+Маршрут используется Telegram-ботом для передачи
+данных аккаунта при привязке к Smart Attendance.
+
+Авторизация:
+
+Authorization: Bearer <BOT_SERVICE_TOKEN>
+
+BOT_SERVICE_TOKEN — отдельный секрет для взаимодействия
+бота с Backend. Он хранится в переменных окружения
+и не должен попадать в GitHub.
+
+Тело запроса:
+
+{
+  "code": "ONE_TIME_CODE",
+  "telegramUserId": "123456789",
+  "username": "student_user",
+  "firstName": "Иван"
+}
+
+Обязательные поля:
+- code — одноразовый код из ссылки;
+- telegramUserId — Telegram ID пользователя в виде строки.
+
+Необязательные поля:
+- username;
+- firstName.
+
+Успешный ответ — HTTP 200:
+
+{
+  "status": "AWAITING_CONFIRMATION",
+  "message": "Confirm Telegram linking in Smart Attendance"
+}
+
+Ошибки:
+
+- 400 INVALID_REQUEST — неверный формат данных;
+- 401 UNAUTHORIZED_BOT — неправильный или отсутствующий токен;
+- 404 LINK_CODE_INVALID — код неизвестен или истёк;
+- 409 LINK_CODE_USED — код уже использован;
+- 409 TELEGRAM_ALREADY_LINKED — Telegram ID уже привязан.
+
+Если служебная авторизация не настроена,
+Backend возвращает HTTP 503.
+
+После успешного запроса Backend временно сохраняет
+Telegram ID в Redis.
+
+Окончательная привязка происходит только после
+подтверждения студентом через:
+
+POST /api/telegram/link/confirm
+
+Важно: истёкший код сейчас возвращает 404,
+а не отдельный ответ 410.
+
+Поле User.telegramId не изменяется при link/claim.
