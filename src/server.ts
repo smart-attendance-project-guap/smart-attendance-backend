@@ -12,6 +12,7 @@ import authRoutes from "./routes/authRoutes.js";
 import lessonRoutes from "./routes/lessonRoutes.js";
 import attendanceRoutes from "./routes/attendanceRoutes.js";
 import referenceRoutes from "./routes/referenceRoutes.js";
+import telegramRoutes from "./routes/telegramRoutes.js";
 
 const app = express();
 const PORT = 3000;
@@ -28,6 +29,7 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/lessons", lessonRoutes);
 app.use("/api/attendance", attendanceRoutes);
+app.use("/api/telegram", telegramRoutes);
 app.use("/api", referenceRoutes);
 
 app.get("/api/protected", authMiddleware, (req: AuthRequest, res) => {
