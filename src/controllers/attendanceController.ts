@@ -4,6 +4,7 @@ import { redisClient } from "../redis.js";
 import { broadcast } from "../websocket.js";
 import type { AuthRequest } from "../middleware/authMiddleware.js";
 import { Prisma } from "../generated/prisma/client.js";
+import { enqueueAttendanceDecisionNotification } from "../services/telegramNotifications.js";
 
 export async function markAttendance(req: AuthRequest, res: Response) {
   try {
@@ -623,6 +624,20 @@ export async function approveAttendance(
       rejectionReason: updatedAttendance.rejectionReason,
     });
 
+
+    try {
+      await enqueueAttendanceDecisionNotification(
+        updatedAttendance.studentId,
+        updatedAttendance.lessonId,
+        "ATTENDANCE_CONFIRMED",
+      );
+    } catch (error) {
+      console.error(
+        "Failed to queue attendance confirmation notification:",
+        error,
+      );
+    }
+
     return res.json({
       message: "Attendance approved",
       attendance: updatedAttendance,
@@ -723,10 +738,25 @@ export async function rejectAttendance(
       rejectionReason: updatedAttendance.rejectionReason,
     });
 
+    try {
+      await enqueueAttendanceDecisionNotification(
+        updatedAttendance.studentId,
+        updatedAttendance.lessonId,
+        "ATTENDANCE_REJECTED",
+      );
+    } catch (error) {
+      console.error(
+        "Failed to queue attendance rejection notification:",
+        error,
+      );
+    }
+
+
     return res.json({
       message: "Attendance rejected",
       attendance: updatedAttendance,
     });
+
   } catch (error) {
     console.error(error);
 
@@ -859,8 +889,8 @@ export async function getTeacherLessonStats(
         const attendancePercentage =
           totalStudents > 0
             ? Number(
-                ((attendedStudents / totalStudents) * 100).toFixed(2),
-              )
+              ((attendedStudents / totalStudents) * 100).toFixed(2),
+            )
             : 0;
 
         return {
@@ -965,8 +995,8 @@ export async function getTeacherGroupStats(
       attendancePercentage:
         group.totalStudents > 0
           ? Number(
-              ((group.attendedStudents / group.totalStudents) * 100).toFixed(2),
-            )
+            ((group.attendedStudents / group.totalStudents) * 100).toFixed(2),
+          )
           : 0,
     }));
 

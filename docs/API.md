@@ -857,3 +857,143 @@ POST /api/telegram/link/confirm
 а не отдельный ответ 410.
 
 Поле User.telegramId не изменяется при link/claim.
+
+
+---
+
+## Telegram Notifications API
+
+Backend поддерживает очередь Telegram-уведомлений в PostgreSQL.
+
+### Типы уведомлений
+
+- `LESSON_REMINDER` — напоминание о занятии.
+- `LESSON_MISSED` — отсутствие отметки на завершённом занятии.
+- `ATTENDANCE_CONFIRMED` — преподаватель подтвердил посещение.
+- `ATTENDANCE_REJECTED` — преподаватель отклонил посещение.
+
+### POST /api/internal/telegram/notifications/claim
+
+Служебный маршрут для получения уведомлений Telegram-ботом.
+
+Авторизация:
+
+`Authorization: Bearer BOT_SERVICE_TOKEN`
+
+Тело запроса:
+
+```json
+{
+  "limit": 3
+}
+```
+
+`limit` — целое число от 1 до 10.
+
+При успехе возвращает HTTP 200:
+
+```json
+{
+  "notifications": [
+    {
+      "notificationId": 1,
+      "leaseToken": "temporary-processing-token",
+      "telegramId": "987654321",
+      "type": "LESSON_REMINDER",
+      "lessonId": 7,
+      "discipline": "Математика",
+      "startsAt": "2026-11-07T14:00:00.000Z",
+      "endsAt": "2026-11-07T15:30:00.000Z",
+      "attendanceStatus": null,
+      "rejectionReason": null
+    }
+  ]
+}
+```
+
+Если уведомлений нет:
+
+```json
+{
+  "notifications": []
+}
+```
+
+При выдаче уведомление получает статус `PROCESSING`,
+уникальный `leaseToken` и срок обработки 90 секунд.
+
+### POST /api/internal/telegram/notifications/:id/result
+
+Служебный маршрут для сохранения результата отправки.
+
+Авторизация:
+
+`Authorization: Bearer BOT_SERVICE_TOKEN`
+
+Успешная отправка:
+
+```json
+{
+  "leaseToken": "temporary-processing-token",
+  "status": "SENT",
+  "telegramMessageId": 12345
+}
+```
+
+Неудачная отправка:
+
+```json
+{
+  "leaseToken": "temporary-processing-token",
+  "status": "FAILED",
+  "errorCode": "TELEGRAM_429",
+  "retryable": true
+}
+```
+
+При успехе возвращает HTTP 200:
+
+```json
+{
+  "success": true
+}
+```
+
+Ошибки:
+
+- `400 INVALID_REQUEST` — неверные данные.
+- `401 UNAUTHORIZED_BOT` — неверный служебный токен.
+- `409 INVALID_LEASE` — недействительный или истёкший lease.
+- `500 INTERNAL_ERROR` — внутренняя ошибка.
+
+### Повторные попытки
+
+- Максимум 5 попыток отправки.
+- Временная ошибка возвращает уведомление в `PENDING`.
+- Задержка между попытками увеличивается.
+- Постоянная ошибка переводит уведомление в `FAILED`.
+- Успешная отправка переводит уведомление в `SENT`.
+- Истёкшая пятая попытка закрывается как `FAILED` при следующем запросе очереди.
+
+### Автоматический планировщик
+
+По умолчанию выключен.
+
+Переменные окружения:
+
+```dotenv
+TELEGRAM_NOTIFICATION_SCHEDULER_ENABLED=false
+TELEGRAM_NOTIFICATION_SCHEDULER_DRY_RUN=false
+```
+
+При включении планировщик проверяет расписание каждую минуту.
+
+Напоминания создаются для занятий, начинающихся
+в ближайшие 15 минут.
+
+Уведомления о пропусках создаются для завершённых
+занятий за последние 10 минут, если у студента
+отсутствует запись посещения.
+
+Режим DRY_RUN используется для проверки запуска
+без создания уведомлений.
