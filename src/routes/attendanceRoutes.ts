@@ -9,7 +9,6 @@ import {
   getSuspiciousAttendance,
   approveAttendance,
   rejectAttendance,
-  updateAttendanceChecks,
   getTeacherAttendanceStats,
   getTeacherLessonStats,
   getTeacherGroupStats,
@@ -28,6 +27,5 @@ router.get("/lesson/:id", authMiddleware, getLessonAttendance);
 router.get("/suspicious", authMiddleware, getSuspiciousAttendance);
 router.patch("/:id/approve", authMiddleware, approveAttendance);
 router.patch("/:id/reject", authMiddleware, rejectAttendance);
-router.patch("/:id/checks", authMiddleware, updateAttendanceChecks);
 
 export default router;
