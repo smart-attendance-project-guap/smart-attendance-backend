@@ -47,10 +47,11 @@ export async function register(req: Request, res: Response) {
       });
     }
 
-    // Разрешаем только роли из нашей системы
-    if (role !== "STUDENT" && role !== "TEACHER") {
-      return res.status(400).json({
-        message: "Role must be STUDENT or TEACHER",
+    // Публичная регистрация разрешена только студентам.
+    // Аккаунты преподавателей создаются отдельно.
+    if (role !== "STUDENT") {
+      return res.status(403).json({
+        message: "Public registration is allowed only for students",
       });
     }
 
