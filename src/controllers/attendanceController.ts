@@ -56,6 +56,21 @@ export async function markAttendance(req: AuthRequest, res: Response) {
       });
     }
 
+    // Разрешаем отметку только во время занятия
+    const now = new Date();
+
+    if (now < lesson.startsAt) {
+      return res.status(400).json({
+        message: "Lesson has not started yet",
+      });
+    }
+
+    if (now >= lesson.endsAt) {
+      return res.status(400).json({
+        message: "Lesson has already ended",
+      });
+    }
+
     const student = await prisma.user.findUnique({
       where: {
         id: req.user.userId,
@@ -602,7 +617,8 @@ export async function approveAttendance(
       },
       data: {
         status:
-          attendance.markedAt > attendance.lesson.startsAt
+          attendance.markedAt.getTime() >
+            attendance.lesson.startsAt.getTime() + 15 * 60 * 1000
             ? "LATE"
             : "PRESENT",
         reviewed: true,
