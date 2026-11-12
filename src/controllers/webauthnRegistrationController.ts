@@ -4,6 +4,7 @@ import {
   verifyRegistrationResponse,
   type RegistrationResponseJSON,
 } from "@simplewebauthn/server";
+import { readWebAuthnConfig } from "../utils/webauthnConfig.js";
 import type { Response } from "express";
 import type { AuthRequest } from "../middleware/authMiddleware.js";
 import { prisma } from "../prisma.js";
@@ -13,17 +14,6 @@ import {
   storeRegistrationChallenge,
   WEBAUTHN_REGISTRATION_TTL_SECONDS,
 } from "../utils/webauthnChallenge.js";
-
-function readWebAuthnConfig() {
-  const origin = process.env.WEBAUTHN_ORIGIN?.trim();
-  const rpID = process.env.WEBAUTHN_RP_ID?.trim();
-
-  if (!origin || !rpID) {
-    throw new Error("WEBAUTHN_ORIGIN and WEBAUTHN_RP_ID are required");
-  }
-
-  return { origin, rpID };
-}
 
 export async function getRegistrationOptions(req: AuthRequest, res: Response) {
   if (req.user?.role !== "STUDENT") {

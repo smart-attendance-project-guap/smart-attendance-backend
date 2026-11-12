@@ -1,3 +1,7 @@
+import {
+  getAttendanceDeviceOptions,
+  verifyAttendanceDevice,
+} from "../controllers/webauthnAttendanceController.js";
 import { Router } from "express";
 import { authMiddleware } from "../middleware/authMiddleware.js";
 import {
@@ -17,6 +21,8 @@ import {
 const router = Router();
 
 router.post("/:id/mark", authMiddleware, markAttendance);
+router.post("/:id/device/options", authMiddleware, getAttendanceDeviceOptions);
+router.post("/:id/device/verify", authMiddleware, verifyAttendanceDevice);
 router.get("/missed", authMiddleware, getMissedLessons);
 router.get("/history", authMiddleware, getAttendanceHistory);
 router.get("/stats", authMiddleware, getAttendanceStats);
