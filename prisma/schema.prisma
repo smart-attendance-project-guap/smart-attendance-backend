@@ -30,6 +30,7 @@ model User {
   group       Group?       @relation(fields: [groupId], references: [id])
   lessons     Lesson[]
   attendances Attendance[]
+  telegramNotifications TelegramNotification[]
   devices     Device[]
   webAuthnCredentials WebAuthnCredential[]
   createdAt   DateTime     @default(now())
@@ -67,6 +68,7 @@ model Lesson {
   group       Group        @relation(fields: [groupId], references: [id])
   classroom   Classroom    @relation(fields: [classroomId], references: [id])
   attendances Attendance[]
+  telegramNotifications TelegramNotification[]
 }
 
 model Attendance {
@@ -96,6 +98,7 @@ model Device {
 
   user        User     @relation(fields: [userId], references: [id])
 }
+
 enum WebAuthnDeviceType {
   SINGLE_DEVICE
   MULTI_DEVICE
@@ -116,4 +119,45 @@ model WebAuthnCredential {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+enum TelegramNotificationType {
+  LESSON_REMINDER
+  LESSON_MISSED
+  ATTENDANCE_CONFIRMED
+  ATTENDANCE_REJECTED
+}
+
+enum TelegramNotificationStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+}
+
+model TelegramNotification {
+  id                Int                        @id @default(autoincrement())
+  userId            Int
+  lessonId          Int
+  type              TelegramNotificationType
+  status            TelegramNotificationStatus @default(PENDING)
+
+  scheduledAt       DateTime
+  attempts          Int                        @default(0)
+  leaseToken        String?                    @unique
+  leaseExpiresAt    DateTime?
+
+  telegramMessageId Int?
+  lastErrorCode     String?
+  sentAt            DateTime?
+
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+
+  user              User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson            Lesson                     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId, type])
+  @@index([status, scheduledAt])
+  @@index([status, leaseExpiresAt])
 }

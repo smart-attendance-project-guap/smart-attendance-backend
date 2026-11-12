@@ -733,3 +733,267 @@ Frontend может периодически запрашивать
 
 Адресная отправка WebSocket-событий
 студентам пока не реализована.
+
+
+## Привязка Telegram
+
+Backend поддерживает привязку Telegram-аккаунта
+к аккаунту студента.
+
+### POST /api/telegram/link/start
+
+Доступ: STUDENT, требуется JWT.
+
+Создаёт одноразовый код на 5 минут.
+
+Ответ 200:
+
+{
+  "status": "WAITING_BOT",
+  "linkUrl": "https://t.me/BOT_USERNAME?start=CODE",
+  "expiresAt": "2026-11-06T19:58:55.292Z"
+}
+
+Если Telegram уже привязан — HTTP 409.
+
+### GET /api/telegram/link/status
+
+Доступ: STUDENT, требуется JWT.
+
+Возможные статусы:
+
+- NOT_STARTED — активной заявки нет;
+- WAITING_BOT — ожидается обращение бота;
+- AWAITING_CONFIRMATION — ожидается подтверждение студента;
+- LINKED — Telegram привязан.
+
+При AWAITING_CONFIRMATION возвращаются Telegram ID,
+username, firstName и expiresAt.
+
+### POST /api/telegram/link/confirm
+
+Доступ: STUDENT, требуется JWT.
+
+Подтверждает привязку Telegram-аккаунта,
+ранее переданного ботом.
+
+Тело запроса не требуется.
+
+Ответ 200:
+
+{
+  "status": "LINKED",
+  "telegram": {
+    "id": "123456789",
+    "username": "student_user"
+  }
+}
+
+Если заявка не готова или истекла — HTTP 409
+с кодом LINK_NOT_READY.
+
+Если Telegram уже привязан — HTTP 409.
+
+
+## Служебный API Telegram-бота
+
+### POST /api/internal/telegram/link/claim
+
+Маршрут используется Telegram-ботом для передачи
+данных аккаунта при привязке к Smart Attendance.
+
+Авторизация:
+
+Authorization: Bearer <BOT_SERVICE_TOKEN>
+
+BOT_SERVICE_TOKEN — отдельный секрет для взаимодействия
+бота с Backend. Он хранится в переменных окружения
+и не должен попадать в GitHub.
+
+Тело запроса:
+
+{
+  "code": "ONE_TIME_CODE",
+  "telegramUserId": "123456789",
+  "username": "student_user",
+  "firstName": "Иван"
+}
+
+Обязательные поля:
+- code — одноразовый код из ссылки;
+- telegramUserId — Telegram ID пользователя в виде строки.
+
+Необязательные поля:
+- username;
+- firstName.
+
+Успешный ответ — HTTP 200:
+
+{
+  "status": "AWAITING_CONFIRMATION",
+  "message": "Confirm Telegram linking in Smart Attendance"
+}
+
+Ошибки:
+
+- 400 INVALID_REQUEST — неверный формат данных;
+- 401 UNAUTHORIZED_BOT — неправильный или отсутствующий токен;
+- 404 LINK_CODE_INVALID — код неизвестен или истёк;
+- 409 LINK_CODE_USED — код уже использован;
+- 409 TELEGRAM_ALREADY_LINKED — Telegram ID уже привязан.
+
+Если служебная авторизация не настроена,
+Backend возвращает HTTP 503.
+
+После успешного запроса Backend временно сохраняет
+Telegram ID в Redis.
+
+Окончательная привязка происходит только после
+подтверждения студентом через:
+
+POST /api/telegram/link/confirm
+
+Важно: истёкший код сейчас возвращает 404,
+а не отдельный ответ 410.
+
+Поле User.telegramId не изменяется при link/claim.
+
+
+---
+
+## Telegram Notifications API
+
+Backend поддерживает очередь Telegram-уведомлений в PostgreSQL.
+
+### Типы уведомлений
+
+- `LESSON_REMINDER` — напоминание о занятии.
+- `LESSON_MISSED` — отсутствие отметки на завершённом занятии.
+- `ATTENDANCE_CONFIRMED` — преподаватель подтвердил посещение.
+- `ATTENDANCE_REJECTED` — преподаватель отклонил посещение.
+
+### POST /api/internal/telegram/notifications/claim
+
+Служебный маршрут для получения уведомлений Telegram-ботом.
+
+Авторизация:
+
+`Authorization: Bearer BOT_SERVICE_TOKEN`
+
+Тело запроса:
+
+```json
+{
+  "limit": 3
+}
+```
+
+`limit` — целое число от 1 до 10.
+
+При успехе возвращает HTTP 200:
+
+```json
+{
+  "notifications": [
+    {
+      "notificationId": 1,
+      "leaseToken": "temporary-processing-token",
+      "telegramId": "987654321",
+      "type": "LESSON_REMINDER",
+      "lessonId": 7,
+      "discipline": "Математика",
+      "startsAt": "2026-11-07T14:00:00.000Z",
+      "endsAt": "2026-11-07T15:30:00.000Z",
+      "attendanceStatus": null,
+      "rejectionReason": null
+    }
+  ]
+}
+```
+
+Если уведомлений нет:
+
+```json
+{
+  "notifications": []
+}
+```
+
+При выдаче уведомление получает статус `PROCESSING`,
+уникальный `leaseToken` и срок обработки 90 секунд.
+
+### POST /api/internal/telegram/notifications/:id/result
+
+Служебный маршрут для сохранения результата отправки.
+
+Авторизация:
+
+`Authorization: Bearer BOT_SERVICE_TOKEN`
+
+Успешная отправка:
+
+```json
+{
+  "leaseToken": "temporary-processing-token",
+  "status": "SENT",
+  "telegramMessageId": 12345
+}
+```
+
+Неудачная отправка:
+
+```json
+{
+  "leaseToken": "temporary-processing-token",
+  "status": "FAILED",
+  "errorCode": "TELEGRAM_429",
+  "retryable": true
+}
+```
+
+При успехе возвращает HTTP 200:
+
+```json
+{
+  "success": true
+}
+```
+
+Ошибки:
+
+- `400 INVALID_REQUEST` — неверные данные.
+- `401 UNAUTHORIZED_BOT` — неверный служебный токен.
+- `409 INVALID_LEASE` — недействительный или истёкший lease.
+- `500 INTERNAL_ERROR` — внутренняя ошибка.
+
+### Повторные попытки
+
+- Максимум 5 попыток отправки.
+- Временная ошибка возвращает уведомление в `PENDING`.
+- Задержка между попытками увеличивается.
+- Постоянная ошибка переводит уведомление в `FAILED`.
+- Успешная отправка переводит уведомление в `SENT`.
+- Истёкшая пятая попытка закрывается как `FAILED` при следующем запросе очереди.
+
+### Автоматический планировщик
+
+По умолчанию выключен.
+
+Переменные окружения:
+
+```dotenv
+TELEGRAM_NOTIFICATION_SCHEDULER_ENABLED=false
+TELEGRAM_NOTIFICATION_SCHEDULER_DRY_RUN=false
+```
+
+При включении планировщик проверяет расписание каждую минуту.
+
+Напоминания создаются для занятий, начинающихся
+в ближайшие 15 минут.
+
+Уведомления о пропусках создаются для завершённых
+занятий за последние 10 минут, если у студента
+отсутствует запись посещения.
+
+Режим DRY_RUN используется для проверки запуска
+без создания уведомлений.

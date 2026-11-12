@@ -13,6 +13,8 @@ import lessonRoutes from "./routes/lessonRoutes.js";
 import attendanceRoutes from "./routes/attendanceRoutes.js";
 import referenceRoutes from "./routes/referenceRoutes.js";
 import telegramRoutes from "./routes/telegramRoutes.js";
+import internalTelegramRoutes from "./routes/internalTelegramRoutes.js";
+import { startTelegramNotificationScheduler } from "./services/telegramNotificationRunner.js";
 
 const app = express();
 const PORT = 3000;
@@ -30,6 +32,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/lessons", lessonRoutes);
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/telegram", telegramRoutes);
+app.use("/api/internal/telegram", internalTelegramRoutes);
 app.use("/api", referenceRoutes);
 
 app.get("/api/protected", authMiddleware, (req: AuthRequest, res) => {
@@ -64,11 +67,19 @@ app.get("/api/db-test", async (req, res) => {
   }
 });
 
+
 connectRedis()
   .then(() => {
     httpServer.listen(PORT, () => {
       console.log(`Backend started on http://localhost:${PORT}`);
       console.log(`WebSocket available at ws://localhost:${PORT}/ws`);
+
+      if (process.env.TELEGRAM_NOTIFICATION_SCHEDULER_ENABLED === "true") {
+        startTelegramNotificationScheduler();
+        console.log("Telegram notification scheduler enabled");
+      } else {
+        console.log("Telegram notification scheduler disabled");
+      }
     });
   })
   .catch((error) => {

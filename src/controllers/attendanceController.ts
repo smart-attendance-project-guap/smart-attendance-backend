@@ -4,6 +4,7 @@ import { redisClient } from "../redis.js";
 import { broadcast } from "../websocket.js";
 import type { AuthRequest } from "../middleware/authMiddleware.js";
 import { Prisma } from "../generated/prisma/client.js";
+import { enqueueAttendanceDecisionNotification } from "../services/telegramNotifications.js";
 
 export async function markAttendance(req: AuthRequest, res: Response) {
   try {
@@ -52,6 +53,21 @@ export async function markAttendance(req: AuthRequest, res: Response) {
     if (lesson.finishedAt) {
       return res.status(400).json({
         message: "Lesson is already finished",
+      });
+    }
+
+    // Разрешаем отметку только во время занятия
+    const now = new Date();
+
+    if (now < lesson.startsAt) {
+      return res.status(400).json({
+        message: "Lesson has not started yet",
+      });
+    }
+
+    if (now >= lesson.endsAt) {
+      return res.status(400).json({
+        message: "Lesson has already ended",
       });
     }
 
@@ -601,7 +617,8 @@ export async function approveAttendance(
       },
       data: {
         status:
-          attendance.markedAt > attendance.lesson.startsAt
+          attendance.markedAt.getTime() >
+            attendance.lesson.startsAt.getTime() + 15 * 60 * 1000
             ? "LATE"
             : "PRESENT",
         reviewed: true,
@@ -622,6 +639,20 @@ export async function approveAttendance(
       reviewed: updatedAttendance.reviewed,
       rejectionReason: updatedAttendance.rejectionReason,
     });
+
+
+    try {
+      await enqueueAttendanceDecisionNotification(
+        updatedAttendance.studentId,
+        updatedAttendance.lessonId,
+        "ATTENDANCE_CONFIRMED",
+      );
+    } catch (error) {
+      console.error(
+        "Failed to queue attendance confirmation notification:",
+        error,
+      );
+    }
 
     return res.json({
       message: "Attendance approved",
@@ -723,10 +754,25 @@ export async function rejectAttendance(
       rejectionReason: updatedAttendance.rejectionReason,
     });
 
+    try {
+      await enqueueAttendanceDecisionNotification(
+        updatedAttendance.studentId,
+        updatedAttendance.lessonId,
+        "ATTENDANCE_REJECTED",
+      );
+    } catch (error) {
+      console.error(
+        "Failed to queue attendance rejection notification:",
+        error,
+      );
+    }
+
+
     return res.json({
       message: "Attendance rejected",
       attendance: updatedAttendance,
     });
+
   } catch (error) {
     console.error(error);
 
@@ -859,8 +905,8 @@ export async function getTeacherLessonStats(
         const attendancePercentage =
           totalStudents > 0
             ? Number(
-                ((attendedStudents / totalStudents) * 100).toFixed(2),
-              )
+              ((attendedStudents / totalStudents) * 100).toFixed(2),
+            )
             : 0;
 
         return {
@@ -965,8 +1011,8 @@ export async function getTeacherGroupStats(
       attendancePercentage:
         group.totalStudents > 0
           ? Number(
-              ((group.attendedStudents / group.totalStudents) * 100).toFixed(2),
-            )
+            ((group.attendedStudents / group.totalStudents) * 100).toFixed(2),
+          )
           : 0,
     }));
 
