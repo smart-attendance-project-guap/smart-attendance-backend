@@ -88,15 +88,11 @@ QR действует 15 секунд.
 
 ### PATCH /api/attendance/:id/checks
 
-Сохранить результаты проверок посещения.
+### Проверка устройства при отметке
 
-Проверки:
-
-- faceChecked
-- deviceChecked
-- locationChecked
-
-Доступ: STUDENT.
+Используйте `POST /api/attendance/:id/device/options` и
+`POST /api/attendance/:id/device/verify`.
+Подробности в разделе [Проверка устройства WebAuthn](#проверка-устройства-webauthn).
 
 ### GET /api/attendance/lesson/:id
 
@@ -629,58 +625,44 @@ Authorization: Bearer <TEACHER_TOKEN>
 
 ## Attendance checks
 
-### Текущее состояние
+После `POST /api/attendance/:lessonId/mark` сервер создаёт отметку
+со статусом `PENDING`.
 
-PATCH /api/attendance/:id/checks
+### Проверка устройства WebAuthn
 
-Доступ: STUDENT, требуется JWT.
+Все маршруты требуют JWT студента. В маршрутах `device` параметр `:id` —
+ID отметки из ответа `/mark`.
 
-Маршрут существует, но является временной реализацией.
+| Маршрут | Ответ при успехе |
+| --- | --- |
+| `POST /api/devices/webauthn/register/options` | `200` с `requestId` и `options` |
+| `POST /api/devices/webauthn/register/verify` | `201` с `verified: true` |
+| `POST /api/attendance/:id/device/options` | `200` с `requestId` и `options` |
+| `POST /api/attendance/:id/device/verify` | `200` с `verified: true` и `status: "PENDING"` |
 
-Сейчас он принимает от студента значения:
-- faceChecked
-- deviceChecked
-- locationChecked
-- rejectionReason (необязательно)
+Передайте `options` в SimpleWebAuthn как `optionsJSON`. Для регистрации
+используйте `startRegistration`, для проверки при отметке —
+`startAuthentication`. Отправьте результат целиком как `credential`
+в теле запроса `/verify` вместе с `requestId` из того же ответа `/options`.
 
-Значения проверок передаются клиентом и не
-подтверждаются независимой серверной проверкой.
+`requestId` возвращается только при успешном запросе `/options`.
+При перезагрузке страницы или переходе на другое устройство начните
+попытку заново с запроса `/options`. Для проверки на другом устройстве
+на нём должен быть доступен зарегистрированный ключ.
 
-При трёх true сервер устанавливает PRESENT
-или LATE в зависимости от времени отметки.
+- `409 NO_REGISTERED_CREDENTIAL` — у студента ещё нет ключа. Предложите регистрацию.
+- `410 CHALLENGE_EXPIRED_OR_USED` — попытка истекла, уже использована
+  или истекло окно проверки отметки. Пока окно открыто, можно запросить
+  новые `options`.
 
-Если хотя бы одна проверка false,
-устанавливается REJECTED.
+Одноразовый challenge действует до 120 секунд. При проверке отметки
+также действует общий лимит в 180 секунд с момента `markedAt`.
+Успешная проверка устанавливает `deviceChecked=true`. Отметка остаётся
+`PENDING` до решения преподавателя.
 
-ВАЖНО: Этот маршрут нельзя использовать
-для безопасного подтверждения посещаемости.
-Студенческий Frontend не должен отправлять
-самостоятельно сформированные результаты проверок.
-
-### Планируемые проверки
-
-1. Привязка и подтверждение устройства.
-2. Проверка геолокации относительно аудитории.
-3. Проверка лица студента.
-
-Отдельные API для этих проверок пока
-не реализованы. Их контракты необходимо
-согласовать с командой.
-
-### Доступный сценарий
-
-После POST /api/attendance/:lessonId/mark
-создаётся посещение со статусом PENDING.
-
-Преподаватель может вручную подтвердить
-или отклонить посещение:
-
-PATCH /api/attendance/:id/approve
-PATCH /api/attendance/:id/reject
-
-Автоматическое подтверждение по результатам
-трёх достоверных серверных проверок
-пока не реализовано.
+Преподаватель может подтвердить отметку через
+`PATCH /api/attendance/:id/approve` или отклонить через
+`PATCH /api/attendance/:id/reject`.
 
 ---
 
