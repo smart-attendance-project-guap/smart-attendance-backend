@@ -37,6 +37,7 @@ export async function checkAttendanceLocation(req: AuthRequest, res: Response) {
         status: true,
         reviewed: true,
         markedAt: true,
+        locationChecked: true,
         rejectionReason: true,
         lesson: {
           select: {
@@ -70,8 +71,22 @@ export async function checkAttendanceLocation(req: AuthRequest, res: Response) {
       });
     }
 
+        const captureTimeOutsideWindow =
+      location.capturedAtMs < markedAtMs || location.capturedAtMs > now;
+
+    if (attendance.locationChecked) {
+      return res.status(200).json({
+        status: "PENDING",
+        locationChecked: true,
+        reason: null,
+        captureTimeOutsideWindow,
+      });
+    }
+
     let reason: string | null = null;
-    if (location.accuracyMeters > MAX_ACCURACY_METERS) {
+    if (captureTimeOutsideWindow) {
+      reason = "LOCATION_CAPTURE_TIME_OUTSIDE_WINDOW";
+    } else if (location.accuracyMeters > MAX_ACCURACY_METERS) {
       reason = LOW_ACCURACY;
     } else if (getDistanceMeters(location, attendance.lesson.classroom) > LOCATION_RADIUS_METERS) {
       reason = OUTSIDE_RADIUS;
@@ -81,7 +96,8 @@ export async function checkAttendanceLocation(req: AuthRequest, res: Response) {
     const canReplaceReason =
       previousReason === null ||
       previousReason === LOW_ACCURACY ||
-      previousReason === OUTSIDE_RADIUS;
+      previousReason === OUTSIDE_RADIUS ||
+      previousReason === "LOCATION_CAPTURE_TIME_OUTSIDE_WINDOW";
 
     const result = await prisma.attendance.updateMany({
       where: {
@@ -89,6 +105,7 @@ export async function checkAttendanceLocation(req: AuthRequest, res: Response) {
         studentId: req.user.userId,
         status: "PENDING",
         reviewed: false,
+        locationChecked: false,
         markedAt: { gt: new Date(Date.now() - LOCATION_WINDOW_MS) },
         rejectionReason: previousReason,
       },
@@ -109,8 +126,7 @@ export async function checkAttendanceLocation(req: AuthRequest, res: Response) {
       status: "PENDING",
       locationChecked: reason === null,
       reason,
-      captureTimeOutsideWindow:
-        location.capturedAtMs < markedAtMs || location.capturedAtMs > now,
+      captureTimeOutsideWindow,
     });
   } catch {
     return res.status(500).json({
