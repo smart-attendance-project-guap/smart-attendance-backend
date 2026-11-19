@@ -1,3 +1,4 @@
+import { checkAttendanceLocation } from "../controllers/attendanceLocationController.js";
 import { Router } from "express";
 import { authMiddleware } from "../middleware/authMiddleware.js";
 import {
@@ -17,6 +18,7 @@ import {
 const router = Router();
 
 router.post("/:id/mark", authMiddleware, markAttendance);
+router.post("/:id/location", authMiddleware, checkAttendanceLocation);
 router.get("/missed", authMiddleware, getMissedLessons);
 router.get("/history", authMiddleware, getAttendanceHistory);
 router.get("/stats", authMiddleware, getAttendanceStats);
