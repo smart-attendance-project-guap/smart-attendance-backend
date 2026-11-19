@@ -44,12 +44,21 @@ model Group {
   lessons Lesson[]
 }
 
+model Building {
+  id         Int         @id @default(autoincrement())
+  name       String      @unique
+  address    String
+  classrooms Classroom[]
+}
+
 model Classroom {
-  id        Int    @id @default(autoincrement())
-  name      String
-  latitude  Float
-  longitude Float
-  lessons   Lesson[]
+  id         Int       @id @default(autoincrement())
+  name       String
+  latitude   Float
+  longitude  Float
+  buildingId Int?
+  building   Building? @relation(fields: [buildingId], references: [id])
+  lessons    Lesson[]
 }
 
 model Lesson {
@@ -160,4 +169,9 @@ model TelegramNotification {
   @@unique([userId, lessonId, type])
   @@index([status, scheduledAt])
   @@index([status, leaseExpiresAt])
+}
+
+model Discipline {
+  id   Int    @id @default(autoincrement())
+  name String @unique
 }

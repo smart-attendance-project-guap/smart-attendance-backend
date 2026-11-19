@@ -5,7 +5,8 @@ import { generateToken } from "../utils/jwt.js";
 
 export async function register(req: Request, res: Response) {
   try {
-    const { email, password, firstName, lastName, role, groupId } = req.body;
+    const { email, password, firstName, lastName, role, groupId } = req.body ?? {};
+
 
     // Проверяем типы обязательных полей
     if (
@@ -130,7 +131,8 @@ export async function register(req: Request, res: Response) {
 
 export async function login(req: Request, res: Response) {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body ?? {};
+
 
     if (
       typeof email !== "string" ||
