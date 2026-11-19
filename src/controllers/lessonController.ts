@@ -126,6 +126,44 @@ export async function createLesson(req: AuthRequest, res: Response) {
       });
     }
 
+
+    // Проверяем пересечения занятий по времени
+    const conflictingLesson = await prisma.lesson.findFirst({
+      where: {
+        startsAt: { lt: end },
+        endsAt: { gt: start },
+        OR: [
+          { classroomId: normalizedClassroomId },
+          { groupId: normalizedGroupId },
+          { teacherId: req.user.userId },
+        ],
+      },
+      select: {
+        id: true,
+        classroomId: true,
+        groupId: true,
+        teacherId: true,
+      },
+    });
+
+    if (conflictingLesson) {
+      if (conflictingLesson.classroomId === normalizedClassroomId) {
+        return res.status(409).json({
+          message: "Classroom is already occupied at this time",
+        });
+      }
+
+      if (conflictingLesson.groupId === normalizedGroupId) {
+        return res.status(409).json({
+          message: "Group already has a lesson at this time",
+        });
+      }
+
+      return res.status(409).json({
+        message: "Teacher already has a lesson at this time",
+      });
+    }
+
     const lesson = await prisma.lesson.create({
       data: {
         teacherId: req.user.userId,
