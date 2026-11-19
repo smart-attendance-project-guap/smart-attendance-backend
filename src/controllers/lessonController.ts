@@ -25,6 +25,25 @@ export async function createLesson(req: AuthRequest, res: Response) {
         message: "discipline is required",
       });
     }
+
+    // Проверяем существование дисциплины в базе
+    const savedDiscipline = await prisma.discipline.findFirst({
+      where: {
+        name: {
+          equals: discipline.trim(),
+          mode: "insensitive",
+        },
+      },
+      select: {
+        name: true,
+      },
+    });
+
+    if (!savedDiscipline) {
+      return res.status(400).json({
+        message: "Discipline not found",
+      });
+    }
     if (
       groupId === undefined ||
       classroomId === undefined ||
@@ -110,7 +129,7 @@ export async function createLesson(req: AuthRequest, res: Response) {
     const lesson = await prisma.lesson.create({
       data: {
         teacherId: req.user.userId,
-        discipline: discipline.trim(),
+        discipline: savedDiscipline.name,
         groupId: normalizedGroupId,
         classroomId: normalizedClassroomId,
         startsAt: start,
