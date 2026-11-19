@@ -72,6 +72,9 @@ export async function scheduleMissedTelegramNotifications() {
 
   const lessons = await prisma.lesson.findMany({
     where: {
+      endsAt: {
+        lte: now,
+      },
       finishedAt: {
         gt: windowStart,
         lte: now,
