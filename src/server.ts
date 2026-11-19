@@ -7,6 +7,7 @@ import { authMiddleware, type AuthRequest } from "./middleware/authMiddleware.js
 import { setupWebSocket } from "./websocket.js";
 import { prisma } from "./prisma.js";
 import { connectRedis } from "./redis.js";
+import webAuthnRegistrationRoutes from "./routes/webauthnRegistrationRoutes.js";
 
 import authRoutes from "./routes/authRoutes.js";
 import lessonRoutes from "./routes/lessonRoutes.js";
@@ -29,6 +30,7 @@ app.use(cors({
 app.use(express.json());
 
 app.use("/api/auth", authRoutes);
+app.use("/api/devices/webauthn", webAuthnRegistrationRoutes);
 app.use("/api/lessons", lessonRoutes);
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/telegram", telegramRoutes);

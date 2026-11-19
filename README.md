@@ -121,6 +121,21 @@ Backend работает по адресу:
 
 Используйте эти адреса для локальной интеграции.
 
+### Настройка WebAuthn
+
+Для локального запуска студенческого frontend на `http://localhost:3001`
+добавьте в `.env`:
+
+```dotenv
+WEBAUTHN_ORIGIN=http://localhost:3001
+WEBAUTHN_RP_ID=localhost
+```
+
+`WEBAUTHN_ORIGIN` — адрес страницы frontend со схемой и портом.
+`WEBAUTHN_RP_ID` — домен для ключей WebAuthn, без схемы и порта.
+На рабочем стенде используйте HTTPS и параметры домена frontend.
+
+
 ## 8. Документация API
 
 Описание маршрутов находится в файле:
