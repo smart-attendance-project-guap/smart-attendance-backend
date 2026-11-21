@@ -61,14 +61,8 @@ export async function scheduleUpcomingTelegramReminders() {
 }
 
 
-const MISSED_WINDOW_MINUTES = 10;
-
 export async function scheduleMissedTelegramNotifications() {
   const now = new Date();
-
-  const windowStart = new Date(
-    now.getTime() - MISSED_WINDOW_MINUTES * 60_000,
-  );
 
   const lessons = await prisma.lesson.findMany({
     where: {
@@ -76,7 +70,6 @@ export async function scheduleMissedTelegramNotifications() {
         lte: now,
       },
       finishedAt: {
-        gt: windowStart,
         lte: now,
       },
     },
