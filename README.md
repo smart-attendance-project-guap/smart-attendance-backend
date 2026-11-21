@@ -144,6 +144,58 @@ WEBAUTHN_RP_ID=localhost
 
 Для защищённых запросов сначала необходимо авторизоваться и получить JWT.
 
+## 9. Общий локальный запуск через Docker Compose
+
+Нужен Docker Desktop с Linux containers и Docker Compose 2.17 или новее.
+Команды выполняются из корня Backend. Освободите порты 3000 и 3001,
+остановив предыдущие процессы Backend и frontend.
+
+Скопируйте `.env.docker.example` в `.env.docker` и замените три
+значения `replace_with_...` случайными секретами. Для пароля PostgreSQL
+используйте шестнадцатеричную строку, чтобы она подходила для DATABASE_URL.
+Файл `.env.docker` исключён из Git и Docker-контекста.
+
+```powershell
+docker compose --env-file .env.docker up -d --build --wait
+docker compose --env-file .env.docker exec backend npx tsx scripts/seedUniversityReferences.ts
+```
+
+Frontend откроется на `http://localhost:3001`, Backend — на
+`http://localhost:3000`. Миграции применяются при старте Backend.
+Frontend собирается из `feature-student-frontend`, бот — из
+`feature-telegram` на GitHub. Для сборки локальных изменений задайте
+`FRONTEND_SOURCE` и `BOT_SOURCE` путями к соответствующим репозиториям
+в `.env.docker`. Пути считаются относительно папки Backend.
+
+База и Redis используют отдельные Docker-тома этого Compose-проекта.
+Для первого входа преподавателя запустите существующий интерактивный скрипт:
+
+```powershell
+docker compose --env-file .env.docker exec backend npx tsx scripts/createTeacher.ts
+```
+
+Для Telegram заполните `BOT_TOKEN` и `BOT_USERNAME` в `.env.docker`,
+остановите ранее запущенный экземпляр этого бота и выполните:
+
+```powershell
+docker compose --env-file .env.docker --profile telegram up -d --build bot
+```
+
+Обработчик бота получает задания из Backend. Автоматический планировщик
+изначально выключен. Чтобы включить напоминания и пропуски, установите
+`TELEGRAM_NOTIFICATION_SCHEDULER_ENABLED=true` в `.env.docker` и повторите
+команду запуска Compose.
+
+Проверка состояния и остановка стенда:
+
+```powershell
+docker compose --env-file .env.docker ps
+docker compose --env-file .env.docker --profile telegram down
+```
+
+Команда `down` сохраняет данные в томах. Стенд настроен для работы
+с браузером на этом компьютере через localhost.
+
 ## Важно
 
 - Каждый участник использует собственную локальную тестовую базу данных.

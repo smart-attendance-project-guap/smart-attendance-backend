@@ -1,0 +1,93 @@
+name: smart-attendance-local
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: attendance
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.docker}
+      POSTGRES_DB: smart_attendance
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U attendance -d smart_attendance"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    environment:
+      DATABASE_URL: postgresql://attendance:${POSTGRES_PASSWORD}@postgres:5432/smart_attendance?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env.docker}
+      BOT_SERVICE_TOKEN: ${BOT_SERVICE_TOKEN:?Set BOT_SERVICE_TOKEN in .env.docker}
+      BOT_USERNAME: ${BOT_USERNAME:-}
+      WEBAUTHN_ORIGIN: http://localhost:3001
+      WEBAUTHN_RP_ID: localhost
+      TELEGRAM_NOTIFICATION_SCHEDULER_ENABLED: ${TELEGRAM_NOTIFICATION_SCHEDULER_ENABLED:-false}
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/db-test').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      start_period: 30s
+      retries: 20
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      additional_contexts:
+        frontend_source: ${FRONTEND_SOURCE:-https://github.com/smart-attendance-project-guap/smart-attendance-frontend.git#feature-student-frontend}
+    ports:
+      - "127.0.0.1:3001:3001"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      start_period: 20s
+      retries: 15
+
+  bot:
+    profiles: ["telegram"]
+    build:
+      context: .
+      dockerfile: docker/bot.Dockerfile
+      additional_contexts:
+        bot_source: ${BOT_SOURCE:-https://github.com/smart-attendance-project-guap/smart-attendance-bot.git#feature-telegram}
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      BACKEND_URL: http://backend:3000
+      BOT_SERVICE_TOKEN: ${BOT_SERVICE_TOKEN}
+      ENABLE_NOTIFICATIONS: "true"
+      NOTIFICATION_TIME_ZONE: Europe/Moscow
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:

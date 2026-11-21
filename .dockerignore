@@ -1,0 +1,8 @@
+.git
+.vs
+.env
+.env.*
+node_modules
+dist
+src/generated
+*.log
