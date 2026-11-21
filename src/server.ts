@@ -13,6 +13,7 @@ import authRoutes from "./routes/authRoutes.js";
 import lessonRoutes from "./routes/lessonRoutes.js";
 import attendanceRoutes from "./routes/attendanceRoutes.js";
 import referenceRoutes from "./routes/referenceRoutes.js";
+import scheduleRoutes from "./routes/scheduleRoutes.js";
 import telegramRoutes from "./routes/telegramRoutes.js";
 import internalTelegramRoutes from "./routes/internalTelegramRoutes.js";
 import { startTelegramNotificationScheduler } from "./services/telegramNotificationRunner.js";
@@ -36,6 +37,7 @@ app.use("/api/attendance", attendanceRoutes);
 app.use("/api/telegram", telegramRoutes);
 app.use("/api/internal/telegram", internalTelegramRoutes);
 app.use("/api", referenceRoutes);
+app.use("/api/schedule", scheduleRoutes);
 
 app.get("/api/protected", authMiddleware, (req: AuthRequest, res) => {
   res.json({
