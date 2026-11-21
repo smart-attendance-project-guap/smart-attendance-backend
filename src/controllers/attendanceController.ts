@@ -193,6 +193,7 @@ export async function getMissedLessons(
       where: {
         id: req.user.userId,
       },
+      include: { group: { select: { id: true, name: true } } },
     });
 
     if (!student) {
@@ -246,7 +247,10 @@ export async function getMissedLessons(
     });
 
     return res.status(200).json({
-      missedLessons,
+      missedLessons: missedLessons.map((lesson) => ({
+        ...lesson,
+        group: student.group ?? lesson.group,
+      })),
     });
   } catch (error) {
     console.error(error);
@@ -285,6 +289,7 @@ export async function getAttendanceHistory(
             classroom: true,
           },
         },
+        student: { select: { group: { select: { id: true, name: true } } } },
       },
       orderBy: {
         markedAt: "desc",
@@ -292,7 +297,13 @@ export async function getAttendanceHistory(
     });
 
     return res.json({
-      attendances,
+      attendances: attendances.map(({ student, ...attendance }) => ({
+        ...attendance,
+        lesson: {
+          ...attendance.lesson,
+          group: student.group ?? attendance.lesson.group,
+        },
+      })),
     });
   } catch (error) {
     console.error(error);
