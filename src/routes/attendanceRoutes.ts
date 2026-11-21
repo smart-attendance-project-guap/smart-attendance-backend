@@ -21,12 +21,11 @@ import {
 
 const router = Router();
 
+router.post("/:id/mark", authMiddleware, markAttendance);
 router.post("/:id/device/options", authMiddleware, getAttendanceDeviceOptions);
 router.post("/:id/device/verify", authMiddleware, verifyAttendanceDevice);
 router.post("/:id/location", authMiddleware, checkAttendanceLocation);
-router.post("/:id/device/options", authMiddleware, getAttendanceDeviceOptions);
-router.post("/:id/device/verify", authMiddleware, verifyAttendanceDevice);
-router.post("/:id/location", authMiddleware, checkAttendanceLocation);
+
 router.get("/missed", authMiddleware, getMissedLessons);
 router.get("/history", authMiddleware, getAttendanceHistory);
 router.get("/stats", authMiddleware, getAttendanceStats);
