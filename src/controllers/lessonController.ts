@@ -63,7 +63,7 @@ export async function createLesson(req: AuthRequest, res: Response) {
       groupIds !== undefined &&
       (!Array.isArray(groupIds) ||
         groupIds.length > 4 ||
-        groupIds.some((id: unknown) => !Number.isSafeInteger(id) || (id as number) <= 0))
+        groupIds.some((id: unknown) => typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0))
     ) {
       return res.status(400).json({ message: "groupIds must contain up to four valid group IDs" });
     }
