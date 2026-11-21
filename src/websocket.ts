@@ -91,16 +91,35 @@ export async function broadcast(data: unknown) {
     return;
   }
 
+
   const message = JSON.stringify(data);
+
+  // Определяем студента, которому принадлежит отметка
+  const studentId =
+    "studentId" in data && typeof data.studentId === "number"
+      ? data.studentId
+      : null;
 
   wss.clients.forEach((client) => {
     const authenticatedClient = client as AuthenticatedSocket;
+    const user = authenticatedClient.user;
 
-    if (
-      client.readyState === WebSocket.OPEN &&
-      authenticatedClient.user?.role === "TEACHER" &&
-      authenticatedClient.user.userId === lesson.teacherId
-    ) {
+    if (client.readyState !== WebSocket.OPEN || !user) {
+      return;
+    }
+
+    // Преподаватель получает события своих занятий
+    const isLessonTeacher =
+      user.role === "TEACHER" &&
+      user.userId === lesson.teacherId;
+
+    // Студент получает события только своей отметки
+    const isAttendanceStudent =
+      user.role === "STUDENT" &&
+      studentId !== null &&
+      user.userId === studentId;
+
+    if (isLessonTeacher || isAttendanceStudent) {
       client.send(message);
     }
   });
