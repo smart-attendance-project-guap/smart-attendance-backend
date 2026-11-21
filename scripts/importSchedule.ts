@@ -22,7 +22,7 @@ function requireString(value: unknown, name: string): string {
 function parseSaintPetersburgTime(value: unknown, field: string): Date {
   const text = requireString(value, field);
   // Explicit Moscow time offset avoids local Windows timezone differences.
-  if (!/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(?::\\d{2})?\\+03:00$/.test(text)) {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?\+03:00$/.test(text)) {
     throw new Error(`${field} must be ISO 8601 with +03:00, e.g. 2026-11-23T15:10:00+03:00`);
   }
   const parsed = new Date(text);
