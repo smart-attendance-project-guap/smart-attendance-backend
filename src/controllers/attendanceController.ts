@@ -42,6 +42,7 @@ export async function markAttendance(req: AuthRequest, res: Response) {
       where: {
         id: lessonId,
       },
+      include: { lessonGroups: { select: { groupId: true } } },
     });
 
     if (!lesson) {
@@ -89,7 +90,11 @@ export async function markAttendance(req: AuthRequest, res: Response) {
       });
     }
 
-    if (student.groupId !== lesson.groupId) {
+    if (
+      student.groupId === null ||
+      (student.groupId !== lesson.groupId &&
+        !lesson.lessonGroups.some((entry) => entry.groupId === student.groupId))
+    ) {
       return res.status(403).json({
         message: "Student does not belong to this lesson group",
       });
@@ -188,6 +193,7 @@ export async function getMissedLessons(
       where: {
         id: req.user.userId,
       },
+      include: { group: { select: { id: true, name: true } } },
     });
 
     if (!student) {
@@ -204,10 +210,12 @@ export async function getMissedLessons(
 
     const missedLessons = await prisma.lesson.findMany({
       where: {
-        groupId: student.groupId,
-        finishedAt: {
-          not: null,
-        },
+        OR: [
+          { groupId: student.groupId },
+          { lessonGroups: { some: { groupId: student.groupId } } },
+        ],
+        finishedAt: { not: null },
+        endsAt: { lte: new Date() },
         attendances: {
           none: {
             studentId: student.id,
@@ -239,7 +247,10 @@ export async function getMissedLessons(
     });
 
     return res.status(200).json({
-      missedLessons,
+      missedLessons: missedLessons.map((lesson) => ({
+        ...lesson,
+        group: student.group ?? lesson.group,
+      })),
     });
   } catch (error) {
     console.error(error);
@@ -278,6 +289,7 @@ export async function getAttendanceHistory(
             classroom: true,
           },
         },
+        student: { select: { group: { select: { id: true, name: true } } } },
       },
       orderBy: {
         markedAt: "desc",
@@ -285,7 +297,13 @@ export async function getAttendanceHistory(
     });
 
     return res.json({
-      attendances,
+      attendances: attendances.map(({ student, ...attendance }) => ({
+        ...attendance,
+        lesson: {
+          ...attendance.lesson,
+          group: student.group ?? attendance.lesson.group,
+        },
+      })),
     });
   } catch (error) {
     console.error(error);
@@ -333,10 +351,12 @@ export async function getAttendanceStats(
 
     const lessons = await prisma.lesson.findMany({
       where: {
-        groupId: student.groupId,
-        finishedAt: {
-          not: null,
-        },
+        OR: [
+          { groupId: student.groupId },
+          { lessonGroups: { some: { groupId: student.groupId } } },
+        ],
+        finishedAt: { not: null },
+        endsAt: { lte: new Date() },
       },
       include: {
         attendances: {
@@ -450,10 +470,16 @@ export async function getLessonAttendance(
       },
     });
 
+    const linkedGroups = await prisma.lessonGroup.findMany({
+      where: { lessonId: lesson.id },
+      select: { groupId: true },
+    });
+    const participatingGroupIds = [lesson.groupId, ...linkedGroups.map((g) => g.groupId)];
+
     const students = await prisma.user.findMany({
       where: {
         role: "STUDENT",
-        groupId: lesson.groupId,
+        groupId: { in: participatingGroupIds },
       },
       select: {
         id: true,
@@ -805,9 +831,11 @@ export async function getTeacherAttendanceStats(
         finishedAt: {
           not: null,
         },
+        endsAt: { lte: new Date() },
       },
       include: {
         attendances: true,
+        lessonGroups: { select: { groupId: true } },
       },
     });
 
@@ -820,7 +848,7 @@ export async function getTeacherAttendanceStats(
       const students = await prisma.user.count({
         where: {
           role: "STUDENT",
-          groupId: lesson.groupId,
+          groupId: { in: [lesson.groupId, ...lesson.lessonGroups.map((g) => g.groupId)] },
         },
       });
 
@@ -876,11 +904,13 @@ export async function getTeacherLessonStats(
         finishedAt: {
           not: null,
         },
+        endsAt: { lte: new Date() },
       },
       include: {
         group: true,
         classroom: true,
         attendances: true,
+        lessonGroups: { include: { group: true } },
       },
       orderBy: {
         startsAt: "desc",
@@ -892,7 +922,7 @@ export async function getTeacherLessonStats(
         const totalStudents = await prisma.user.count({
           where: {
             role: "STUDENT",
-            groupId: lesson.groupId,
+            groupId: { in: [lesson.groupId, ...lesson.lessonGroups.map((g) => g.groupId)] },
           },
         });
 
@@ -914,6 +944,7 @@ export async function getTeacherLessonStats(
           startsAt: lesson.startsAt,
           endsAt: lesson.endsAt,
           group: lesson.group,
+          groups: [lesson.group, ...lesson.lessonGroups.map((g) => g.group)],
           classroom: lesson.classroom,
           totalStudents,
           attendedStudents,
@@ -957,10 +988,12 @@ export async function getTeacherGroupStats(
         finishedAt: {
           not: null,
         },
+        endsAt: { lte: new Date() },
       },
       include: {
         group: true,
-        attendances: true,
+        lessonGroups: { include: { group: true } },
+        attendances: { include: { student: { select: { groupId: true } } } },
       },
     });
 
@@ -976,33 +1009,29 @@ export async function getTeacherGroupStats(
     >();
 
     for (const lesson of lessons) {
-      const existing = groupMap.get(lesson.groupId);
-
-      const totalStudents = await prisma.user.count({
-        where: {
-          role: "STUDENT",
-          groupId: lesson.groupId,
-        },
-      });
-
-      const attendedStudents = lesson.attendances.filter(
-        (attendance) =>
-          attendance.status === "PRESENT" ||
-          attendance.status === "LATE",
-      ).length;
-
-      if (existing) {
-        existing.totalLessons += 1;
-        existing.totalStudents += totalStudents;
-        existing.attendedStudents += attendedStudents;
-      } else {
-        groupMap.set(lesson.groupId, {
-          groupId: lesson.groupId,
-          groupName: lesson.group.name,
-          totalLessons: 1,
-          totalStudents,
-          attendedStudents,
+      for (const group of [lesson.group, ...lesson.lessonGroups.map((g) => g.group)]) {
+        const totalStudents = await prisma.user.count({
+          where: { role: "STUDENT", groupId: group.id },
         });
+        const attendedStudents = lesson.attendances.filter(
+          (attendance) =>
+            attendance.student.groupId === group.id &&
+            (attendance.status === "PRESENT" || attendance.status === "LATE"),
+        ).length;
+        const existing = groupMap.get(group.id);
+        if (existing) {
+          existing.totalLessons += 1;
+          existing.totalStudents += totalStudents;
+          existing.attendedStudents += attendedStudents;
+        } else {
+          groupMap.set(group.id, {
+            groupId: group.id,
+            groupName: group.name,
+            totalLessons: 1,
+            totalStudents,
+            attendedStudents,
+          });
+        }
       }
     }
 

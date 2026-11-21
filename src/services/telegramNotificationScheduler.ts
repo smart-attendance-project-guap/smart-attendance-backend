@@ -21,6 +21,18 @@ export async function scheduleUpcomingTelegramReminders() {
     select: {
       id: true,
       startsAt: true,
+      lessonGroups: {
+        select: {
+          group: {
+            select: {
+              users: {
+                where: { role: "STUDENT", telegramId: { not: null } },
+                select: { id: true },
+              },
+            },
+          },
+        },
+      },
       group: {
         select: {
           users: {
@@ -38,7 +50,8 @@ export async function scheduleUpcomingTelegramReminders() {
   });
 
   const notifications = lessons.flatMap((lesson) =>
-    lesson.group.users.map((student) => ({
+    [...lesson.group.users, ...lesson.lessonGroups.flatMap((item) => item.group.users)]
+      .map((student) => ({
       userId: student.id,
       lessonId: lesson.id,
       type: "LESSON_REMINDER" as const,
@@ -61,24 +74,37 @@ export async function scheduleUpcomingTelegramReminders() {
 }
 
 
-const MISSED_WINDOW_MINUTES = 10;
-
 export async function scheduleMissedTelegramNotifications() {
   const now = new Date();
-
-  const windowStart = new Date(
-    now.getTime() - MISSED_WINDOW_MINUTES * 60_000,
-  );
+  const windowStart = new Date(now.getTime() - 10 * 60_000);
 
   const lessons = await prisma.lesson.findMany({
     where: {
-      finishedAt: {
-        gt: windowStart,
-        lte: now,
-      },
+      OR: [
+        {
+          finishedAt: { gt: windowStart, lte: now },
+          endsAt: { lte: now },
+        },
+        {
+          endsAt: { gt: windowStart, lte: now },
+          finishedAt: { lte: now },
+        },
+      ],
     },
     select: {
       id: true,
+      lessonGroups: {
+        select: {
+          group: {
+            select: {
+              users: {
+                where: { role: "STUDENT", telegramId: { not: null } },
+                select: { id: true },
+              },
+            },
+          },
+        },
+      },
       group: {
         select: {
           users: {
@@ -101,7 +127,7 @@ export async function scheduleMissedTelegramNotifications() {
       lesson.attendances.map((a) => a.studentId),
     );
 
-    return lesson.group.users
+    return [...lesson.group.users, ...lesson.lessonGroups.flatMap((item) => item.group.users)]
       .filter((student) => !markedStudentIds.has(student.id))
       .map((student) => ({
         userId: student.id,
