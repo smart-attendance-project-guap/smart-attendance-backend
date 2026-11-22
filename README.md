@@ -135,6 +135,14 @@ WEBAUTHN_RP_ID=localhost
 `WEBAUTHN_RP_ID` — домен для ключей WebAuthn, без схемы и порта.
 На рабочем стенде используйте HTTPS и параметры домена frontend.
 
+Для HTTPS-стенда задайте в окружении Backend (или в ".env.docker" для Compose)
+"CORS_ORIGIN" и "WEBAUTHN_ORIGIN" равными точному HTTPS-адресу frontend,
+например `https://attendance.example.org`. В "WEBAUTHN_RP_ID" укажите
+домен `attendance.example.org`. Origin задаётся без завершающего слеша.
+После изменения настроек пересоздайте контейнер Backend командой
+`docker compose --env-file .env.docker up -d backend`.
+При смене RP ID зарегистрируйте тестовый ключ для нового домена.
+
 
 ## 8. Документация API
 

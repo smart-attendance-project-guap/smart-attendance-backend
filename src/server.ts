@@ -24,7 +24,7 @@ const httpServer = createServer(app);
 setupWebSocket(httpServer);
 
 app.use(cors({
-  origin: "http://localhost:3001",
+  origin: process.env.CORS_ORIGIN ?? "http://localhost:3001",
 }));
 
 app.use(express.json());

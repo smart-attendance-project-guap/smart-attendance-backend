@@ -36,8 +36,9 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env.docker}
       BOT_SERVICE_TOKEN: ${BOT_SERVICE_TOKEN:?Set BOT_SERVICE_TOKEN in .env.docker}
       BOT_USERNAME: ${BOT_USERNAME:-}
-      WEBAUTHN_ORIGIN: http://localhost:3001
-      WEBAUTHN_RP_ID: localhost
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001}
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-http://localhost:3001}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-localhost}
       TELEGRAM_NOTIFICATION_SCHEDULER_ENABLED: ${TELEGRAM_NOTIFICATION_SCHEDULER_ENABLED:-false}
     ports:
       - "127.0.0.1:3000:3000"
