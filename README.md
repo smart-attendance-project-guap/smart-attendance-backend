@@ -143,6 +143,11 @@ WEBAUTHN_RP_ID=localhost
 `docker compose --env-file .env.docker up -d backend`.
 При смене RP ID зарегистрируйте тестовый ключ для нового домена.
 
+Для frontend в Compose задайте `NEXT_PUBLIC_API_URL` равным HTTPS-адресу
+Backend в `.env.docker`. Этот адрес записывается в клиентский код при сборке.
+После изменения выполните
+`docker compose --env-file .env.docker up -d --build --wait frontend`.
+
 
 ## 8. Документация API
 

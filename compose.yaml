@@ -58,6 +58,8 @@ services:
     build:
       context: .
       dockerfile: docker/frontend.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3000}
       additional_contexts:
         frontend_source: ${FRONTEND_SOURCE:-https://github.com/smart-attendance-project-guap/smart-attendance-frontend.git#feature-student-frontend}
     ports:
