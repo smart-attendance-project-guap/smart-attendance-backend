@@ -82,6 +82,7 @@ async function main() {
   };
 
   const teacher = await makeUser("TEACHER");
+  const otherTeacher = await makeUser("TEACHER");
   const first = await makeUser("STUDENT", g1);
   const second = await makeUser("STUDENT", g2);
   const third = await makeUser("STUDENT", outsider);
@@ -234,6 +235,88 @@ async function main() {
   assert(attendances.status === 200 && ids.has(first.id) && ids.has(second.id) && !ids.has(third.id),
     "Teacher attendance list did not include the two allowed students");
 
+  // Negative access-control cases: none of these calls may modify the lesson
+  // or marks. They use the same isolated test teacher, students and classroom.
+  const unauthenticated = await fetch(
+    `http://127.0.0.1:${port}/api/attendance/history`,
+    { signal: AbortSignal.timeout(10_000) },
+  );
+  const invalidJwt = await request("GET", "/api/lessons", "invalid.jwt.token");
+  assert(unauthenticated.status === 401 && invalidJwt.status === 401,
+    `Missing or invalid JWT was accepted: ${unauthenticated.status}, ${invalidJwt.status}`);
+
+  const studentTeacherRoutes = await Promise.all([
+    request("GET", "/api/lessons", first.token),
+    request("POST", "/api/lessons", first.token, {}),
+    request("PATCH", `/api/lessons/${lessonId}/finish`, first.token),
+    request("POST", `/api/lessons/${lessonId}/qr`, first.token),
+    request("GET", `/api/attendance/lesson/${lessonId}`, first.token),
+    request("PATCH", `/api/attendance/${a.body.attendance.id}/approve`, first.token),
+    request("GET", "/api/attendance/teacher/stats", first.token),
+    request("POST", `/api/attendance/${a.body.attendance.id}/device/options`, teacher.token),
+  ]);
+  assert(studentTeacherRoutes.every((response) => response.status === 403),
+    `Student/teacher role separation failed: ${studentTeacherRoutes.map((r) => r.status).join(", ")}`);
+
+  const foreignTeacherRoutes = await Promise.all([
+    request("GET", `/api/attendance/lesson/${lessonId}`, otherTeacher.token),
+    request("PATCH", `/api/attendance/${a.body.attendance.id}/approve`, otherTeacher.token),
+    request("PATCH", `/api/attendance/${b.body.attendance.id}/reject`,
+      otherTeacher.token, { rejectionReason: "unauthorized" }),
+    request("POST", `/api/lessons/${lessonId}/qr`, otherTeacher.token),
+    request("PATCH", `/api/lessons/${lessonId}/finish`, otherTeacher.token),
+  ]);
+  assert(foreignTeacherRoutes.every((response) => response.status === 403),
+    `Another teacher accessed this class: ${foreignTeacherRoutes.map((r) => r.status).join(", ")}`);
+
+  const foreignTeacherLessons = await request("GET", "/api/lessons", otherTeacher.token);
+  assert(foreignTeacherLessons.status === 200 &&
+    Array.isArray(foreignTeacherLessons.body.lessons) &&
+    !foreignTeacherLessons.body.lessons.some((lesson: any) => lesson.id === lessonId),
+    "Another teacher's lesson list exposed this lesson");
+
+  const ownHistory = await request("GET", "/api/attendance/history", first.token);
+  assert(ownHistory.status === 200 &&
+    Array.isArray(ownHistory.body.attendances) &&
+    ownHistory.body.attendances.some((r: any) => r.id === a.body.attendance.id) &&
+    ownHistory.body.attendances.every((r: any) => r.studentId === first.id) &&
+    !ownHistory.body.attendances.some((r: any) => r.id === b.body.attendance.id),
+    "Student attendance history disclosed another student's marks");
+
+  // Legacy endpoint must not be used to set verification booleans directly.
+  const forgedChecks = await fetch(
+    `http://127.0.0.1:${port}/api/attendance/${a.body.attendance.id}/checks`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${first.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        faceChecked: true,
+        deviceChecked: true,
+        locationChecked: true,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    },
+  );
+  assert(forgedChecks.status === 404 || forgedChecks.status === 410,
+    `Client-supplied attendance checks were accepted: HTTP ${forgedChecks.status}`);
+
+  const protectedState = await prisma.attendance.findUnique({
+    where: { id: a.body.attendance.id },
+    select: { status: true, reviewed: true, deviceChecked: true },
+  });
+  const protectedLesson = await prisma.lesson.findUnique({
+    where: { id: lessonId },
+    select: { finishedAt: true },
+  });
+  assert(protectedState?.status === "PENDING" &&
+    protectedState.reviewed === false &&
+    protectedState.deviceChecked === false &&
+    protectedLesson?.finishedAt === null,
+    "Unauthorized requests unexpectedly modified attendance or finished lesson");
+
   // The primary group plus four distinct additional IDs must be rejected,
   // even when the optional array itself contains only four elements.
   const tooManyGroups = await request("POST", "/api/lessons", teacher.token, {
@@ -327,6 +410,11 @@ async function main() {
   console.log("PASS: location captured before QR scan rejected");
   console.log("PASS: valid coordinates confirmed without auto-approving");
   console.log("PASS: repeated location verification stays idempotent");
+  console.log("PASS: missing or forged JWT rejected with HTTP 401");
+  console.log("PASS: students cannot call teacher endpoints or use teacher WebAuthn identity");
+  console.log("PASS: another teacher cannot access or modify a lesson");
+  console.log("PASS: teacher lesson lists and student attendance history are isolated");
+  console.log("PASS: client cannot forge device verification or alter approval state");
   console.log("Temporary data cleanup starts automatically.");
 }
 
