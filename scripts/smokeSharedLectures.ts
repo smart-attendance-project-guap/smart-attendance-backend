@@ -199,6 +199,32 @@ async function main() {
   assert(earlyStats.status === 200 && earlyStats.body.totalLessons === 0,
     "A prematurely finished lesson must not enter final statistics");
 
+  // Approval must be blocked until WebAuthn has been server-verified.
+  const withoutWebAuthn = await request(
+    "PATCH", `/api/attendance/${a.body.attendance.id}/approve`, teacher.token,
+  );
+  assert(
+    withoutWebAuthn.status === 409 &&
+    withoutWebAuthn.body.code === "DEVICE_VERIFICATION_REQUIRED",
+    `Teacher approved PENDING without WebAuthn: HTTP ${withoutWebAuthn.status} ${JSON.stringify(withoutWebAuthn.body)}`,
+  );
+  const stillPending = await prisma.attendance.findUnique({
+    where: { id: a.body.attendance.id },
+    select: { status: true, reviewed: true, deviceChecked: true },
+  });
+  assert(stillPending?.status === "PENDING" &&
+    stillPending.reviewed === false &&
+    stillPending.deviceChecked === false,
+    "Rejected premature approval must not alter attendance");
+
+  // Simulate the verified result for the approval-endpoint smoke test only.
+  // This direct DB update does NOT test or replace a real WebAuthn ceremony;
+  // the real WebAuthn handler is separately responsible for setting this flag.
+  await prisma.attendance.update({
+    where: { id: a.body.attendance.id },
+    data: { deviceChecked: true },
+  });
+
   const approved = await request(
     "PATCH", `/api/attendance/${a.body.attendance.id}/approve`, teacher.token,
   );
@@ -245,6 +271,7 @@ async function main() {
   console.log("PASS: duplicate scan does not create an extra mark");
   console.log("PASS: group 4515 attendance history displays 4515");
   console.log("PASS: early finish excluded until scheduled end");
+  console.log("PASS: teacher cannot approve without WebAuthn");
   console.log("PASS: teacher approval/rejection and per-group stats");
   console.log("PASS: group 4515 sees its rejection in student stats");
 
