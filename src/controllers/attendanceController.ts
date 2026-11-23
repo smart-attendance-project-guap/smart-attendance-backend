@@ -297,13 +297,19 @@ export async function getAttendanceHistory(
     });
 
     return res.json({
-      attendances: attendances.map(({ student, ...attendance }) => ({
-        ...attendance,
-        lesson: {
-          ...attendance.lesson,
-          group: student.group ?? attendance.lesson.group,
-        },
-      })),
+      attendances: attendances.map(({ student, ...attendance }) => {
+        // QR tokens remain short-lived secrets. Never expose them via the
+        // student's attendance history, even after the student marks a class.
+        const { qrToken: _qrToken, qrExpiresAt: _qrExpiresAt, ...lesson } =
+          attendance.lesson;
+        return {
+          ...attendance,
+          lesson: {
+            ...lesson,
+            group: student.group ?? lesson.group,
+          },
+        };
+      }),
     });
   } catch (error) {
     console.error(error);

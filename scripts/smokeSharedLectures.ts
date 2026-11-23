@@ -342,6 +342,18 @@ async function main() {
       record.lesson?.group?.name === "4515",
   ), "Group 4515 history must display the student's own group");
 
+  // Even an enrolled student must not receive the currently active QR secret
+  // through their attendance-history endpoint.
+  const ownLessonHistory = history.body.attendances.find(
+    (record: any) => record.lessonId === lessonId,
+  );
+  assert(ownLessonHistory?.lesson &&
+    !Object.hasOwn(ownLessonHistory.lesson, "qrToken") &&
+    !Object.hasOwn(ownLessonHistory.lesson, "qrExpiresAt") &&
+    ownLessonHistory.lesson.discipline === discipline.name &&
+    ownLessonHistory.lesson.group?.name === "4515",
+    "Student history leaked QR secrets or lost non-sensitive lesson metadata");
+
   // A teacher may finish early, but statistics must wait until endsAt.
   const finished = await request("PATCH", `/api/lessons/${lessonId}/finish`, teacher.token);
   assert(finished.status === 200, "Teacher could not finish the temporary lesson");
@@ -395,6 +407,7 @@ async function main() {
   console.log("PASS: four-group limit includes primary group");
   console.log("PASS: duplicate scan does not create an extra mark");
   console.log("PASS: group 4515 attendance history displays 4515");
+  console.log("PASS: student attendance history never exposes active QR secrets");
   console.log("PASS: early finish excluded until scheduled end");
   console.log("PASS: teacher approval/rejection and per-group stats");
   console.log("PASS: group 4515 sees its rejection in student stats");
