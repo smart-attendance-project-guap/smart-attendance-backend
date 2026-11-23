@@ -161,6 +161,74 @@ async function main() {
   assert(anotherStudentOptions.status === 403,
     `Student from another group must not verify someone else's attendance: HTTP ${anotherStudentOptions.status}, ${JSON.stringify(anotherStudentOptions.body)}`);
 
+  // Verify location checks independently of a mobile phone's GPS.
+  // Classroom coordinates are defined above; synthetic coordinates exercise
+  // the actual HTTP endpoint and leave the attendance PENDING.
+  const locationPath = `/api/attendance/${a.body.attendance.id}/location`;
+  const locationBody = (changes: Record<string, unknown> = {}) => ({
+    latitude: 59.929561,
+    longitude: 30.296671,
+    accuracyMeters: 10,
+    capturedAt: new Date().toISOString(),
+    ...changes,
+  });
+
+  const foreignLocation = await request("POST", locationPath, third.token, locationBody());
+  assert(foreignLocation.status === 403,
+    `Another student verified someone else's location: HTTP ${foreignLocation.status}`);
+
+  const invalidLocation = await request(
+    "POST", locationPath, first.token, locationBody({ accuracyMeters: -1 }),
+  );
+  assert(invalidLocation.status === 400,
+    `Malformed GPS accuracy was not rejected: HTTP ${invalidLocation.status}`);
+
+  const inaccurateLocation = await request(
+    "POST", locationPath, first.token, locationBody({ accuracyMeters: 80 }),
+  );
+  assert(inaccurateLocation.status === 200 &&
+    inaccurateLocation.body.locationChecked === false &&
+    inaccurateLocation.body.reason === "LOCATION_ACCURACY_TOO_LOW",
+    `Inaccurate GPS was accepted: ${JSON.stringify(inaccurateLocation)}`);
+
+  const distantLocation = await request(
+    "POST", locationPath, first.token,
+    locationBody({ latitude: 59.940000, longitude: 30.296671 }),
+  );
+  assert(distantLocation.status === 200 &&
+    distantLocation.body.locationChecked === false &&
+    distantLocation.body.reason === "LOCATION_OUTSIDE_RADIUS",
+    `Out-of-radius GPS was accepted: ${JSON.stringify(distantLocation)}`);
+
+  const staleLocation = await request(
+    "POST", locationPath, first.token,
+    locationBody({ capturedAt: new Date(Date.now() - 60_000).toISOString() }),
+  );
+  assert(staleLocation.status === 200 &&
+    staleLocation.body.locationChecked === false &&
+    staleLocation.body.reason === "LOCATION_CAPTURE_TIME_OUTSIDE_WINDOW",
+    `Coordinates taken before QR scan were accepted: ${JSON.stringify(staleLocation)}`);
+
+  const goodLocation = await request("POST", locationPath, first.token, locationBody());
+  assert(goodLocation.status === 200 &&
+    goodLocation.body.locationChecked === true &&
+    goodLocation.body.reason === null,
+    `Correct nearby coordinates were rejected: ${JSON.stringify(goodLocation)}`);
+
+  const repeatedLocation = await request("POST", locationPath, first.token, locationBody());
+  assert(repeatedLocation.status === 200 && repeatedLocation.body.locationChecked === true,
+    "Repeated valid location check unexpectedly failed");
+
+  const locationState = await prisma.attendance.findUnique({
+    where: { id: a.body.attendance.id },
+    select: { status: true, reviewed: true, locationChecked: true, deviceChecked: true },
+  });
+  assert(locationState?.status === "PENDING" &&
+    locationState.reviewed === false &&
+    locationState.locationChecked === true &&
+    locationState.deviceChecked === false,
+    "Location check must not automatically approve an attendance or impersonate WebAuthn");
+
   const attendances = await request("GET", `/api/attendance/lesson/${lessonId}`, teacher.token);
   const ids = new Set((attendances.body.attendances ?? []).map((item: any) => item.studentId));
   assert(attendances.status === 200 && ids.has(first.id) && ids.has(second.id) && !ids.has(third.id),
@@ -253,6 +321,12 @@ async function main() {
   console.log("PASS: 4516 student denied with HTTP 403");
   console.log("PASS: teacher sees both attendance records");
   console.log("PASS: WebAuthn requires registered key and attendance ownership");
+  console.log("PASS: location check rejects another student's attendance");
+  console.log("PASS: malformed and inaccurate location data rejected");
+  console.log("PASS: coordinates beyond classroom radius rejected");
+  console.log("PASS: location captured before QR scan rejected");
+  console.log("PASS: valid coordinates confirmed without auto-approving");
+  console.log("PASS: repeated location verification stays idempotent");
   console.log("Temporary data cleanup starts automatically.");
 }
 
