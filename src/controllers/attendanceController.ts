@@ -637,6 +637,15 @@ export async function approveAttendance(
       });
     }
 
+    // In the MVP the student must pass a real server-verified WebAuthn
+    // challenge for each QR attendance before teacher approval.
+    if (!attendance.deviceChecked) {
+      return res.status(409).json({
+        code: "DEVICE_VERIFICATION_REQUIRED",
+        message: "Student must complete WebAuthn verification before approval",
+      });
+    }
+
     const updatedAttendance = await prisma.attendance.update({
       where: {
         id: attendance.id,
