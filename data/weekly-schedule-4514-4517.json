@@ -1,0 +1,573 @@
+{
+  "from": "2026-11-23",
+  "through": "2026-12-20",
+  "upperWeekMonday": "2026-11-23",
+  "entries": [
+    {
+      "group": "4514",
+      "weekday": 1,
+      "start": "15:10",
+      "end": "16:40",
+      "week": "every",
+      "discipline": "Прикладная физическая культура (элективный модуль)",
+      "classroom": "спортзал (Ленсовета 14)"
+    },
+    {
+      "group": "4514",
+      "weekday": 1,
+      "start": "18:40",
+      "end": "20:10",
+      "week": "every",
+      "discipline": "Компьютерная графика",
+      "classroom": "52-17 (Б. Морская 67)",
+      "teacherName": "Мирошниченко Н.И."
+    },
+    {
+      "group": "4514",
+      "weekday": 2,
+      "start": "11:10",
+      "end": "12:40",
+      "week": "upper",
+      "discipline": "Экономика",
+      "classroom": "23-06 (Ленсовета 14)",
+      "teacherName": "Дроздова А.П."
+    },
+    {
+      "group": "4514",
+      "weekday": 2,
+      "start": "13:00",
+      "end": "14:30",
+      "week": "upper",
+      "discipline": "Информационное право",
+      "classroom": "12-14 (Ленсовета 14)",
+      "teacherName": "Беззатеева В.С."
+    },
+    {
+      "group": "4514",
+      "weekday": 2,
+      "start": "17:00",
+      "end": "18:30",
+      "week": "every",
+      "discipline": "Компьютерная графика",
+      "classroom": "52-18 (Б. Морская 67)",
+      "teacherName": "Булгаков Д.А."
+    },
+    {
+      "group": "4514",
+      "weekday": 2,
+      "start": "18:40",
+      "end": "20:10",
+      "week": "every",
+      "discipline": "Алгоритмы и структуры данных",
+      "classroom": "53-07 (Б. Морская 67)",
+      "teacherName": "Чернышев С.А."
+    },
+    {
+      "group": "4514",
+      "weekday": 3,
+      "start": "17:00",
+      "end": "18:30",
+      "week": "every",
+      "discipline": "Основы проектной деятельности",
+      "classroom": "22-15 (Б. Морская 67)",
+      "teacherName": "Максатулин М.М."
+    },
+    {
+      "group": "4514",
+      "weekday": 3,
+      "start": "18:40",
+      "end": "20:10",
+      "week": "every",
+      "discipline": "Алгоритмы и структуры данных",
+      "classroom": "52-19 (Б. Морская 67)",
+      "teacherName": "Давидович Б.В."
+    },
+    {
+      "group": "4514",
+      "weekday": 4,
+      "start": "13:00",
+      "end": "14:30",
+      "week": "lower",
+      "discipline": "Теория вероятностей",
+      "classroom": "12-04 (Гастелло 15)",
+      "teacherName": "Решетов Л.А."
+    },
+    {
+      "group": "4514",
+      "weekday": 4,
+      "start": "15:10",
+      "end": "16:40",
+      "week": "every",
+      "discipline": "Теория вероятностей",
+      "classroom": "32-02 (Гастелло 15)",
+      "teacherName": "Ассаул В.Н."
+    },
+    {
+      "group": "4514",
+      "weekday": 5,
+      "start": "09:30",
+      "end": "11:00",
+      "week": "upper",
+      "discipline": "Экономика",
+      "classroom": "22-09 (Ленсовета 14)",
+      "teacherName": "Самойлов А.В."
+    },
+    {
+      "group": "4514",
+      "weekday": 6,
+      "start": "09:30",
+      "end": "11:00",
+      "week": "upper",
+      "discipline": "Основы программирования",
+      "classroom": "22-09 (Б. Морская 67)",
+      "teacherName": "Мустафин Т.Р."
+    },
+    {
+      "group": "4514",
+      "weekday": 6,
+      "start": "11:10",
+      "end": "12:40",
+      "week": "every",
+      "discipline": "Основы программирования",
+      "classroom": "32-04 (Б. Морская 67)",
+      "teacherName": "Куртяник Д.В."
+    },
+    {
+      "group": "4514",
+      "weekday": 6,
+      "start": "13:00",
+      "end": "14:30",
+      "week": "lower",
+      "discipline": "Основы программирования",
+      "classroom": "52-09 (Б. Морская 67)",
+      "teacherName": "Мустафин Т.Р."
+    },
+    {
+      "group": "4515",
+      "weekday": 1,
+      "start": "11:10",
+      "end": "12:40",
+      "week": "every",
+      "discipline": "Прикладная физическая культура (элективный модуль)",
+      "classroom": "спортзал (Ленсовета 14)"
+    },
+    {
+      "group": "4515",
+      "weekday": 1,
+      "start": "15:10",
+      "end": "16:40",
+      "week": "every",
+      "discipline": "Компьютерная графика",
+      "classroom": "52-17 (Б. Морская 67)",
+      "teacherName": "Мирошниченко Н.И."
+    },
+    {
+      "group": "4515",
+      "weekday": 1,
+      "start": "17:00",
+      "end": "18:30",
+      "week": "every",
+      "discipline": "Алгоритмы и структуры данных",
+      "classroom": "52-19 (Б. Морская 67)",
+      "teacherName": "Соловьева Н.А."
+    },
+    {
+      "group": "4515",
+      "weekday": 2,
+      "start": "11:10",
+      "end": "12:40",
+      "week": "lower",
+      "discipline": "Экономика",
+      "classroom": "24-06 (Ленсовета 14)",
+      "teacherName": "Дроздова А.П."
+    },
+    {
+      "group": "4515",
+      "weekday": 2,
+      "start": "13:00",
+      "end": "14:30",
+      "week": "lower",
+      "discipline": "Информационное право",
+      "classroom": "12-14 (Ленсовета 14)",
+      "teacherName": "Беззатеева В.С."
+    },
+    {
+      "group": "4515",
+      "weekday": 2,
+      "start": "17:00",
+      "end": "18:30",
+      "week": "every",
+      "discipline": "Компьютерная графика",
+      "classroom": "52-18 (Б. Морская 67)",
+      "teacherName": "Булгаков Д.А."
+    },
+    {
+      "group": "4515",
+      "weekday": 2,
+      "start": "18:40",
+      "end": "20:10",
+      "week": "every",
+      "discipline": "Алгоритмы и структуры данных",
+      "classroom": "53-07 (Б. Морская 67)",
+      "teacherName": "Чернышев С.А."
+    },
+    {
+      "group": "4515",
+      "weekday": 4,
+      "start": "11:10",
+      "end": "12:40",
+      "week": "lower",
+      "discipline": "Основы проектной деятельности",
+      "classroom": "52-15 (Б. Морская 67)",
+      "teacherName": "Максатулин М.М."
+    },
+    {
+      "group": "4515",
+      "weekday": 4,
+      "start": "11:10",
+      "end": "12:40",
+      "week": "upper",
+      "discipline": "Основы проектной деятельности",
+      "classroom": "22-15 (Б. Морская 67)",
+      "teacherName": "Максатулин М.М."
+    },
+    {
+      "group": "4515",
+      "weekday": 4,
+      "start": "15:10",
+      "end": "16:40",
+      "week": "every",
+      "discipline": "Теория вероятностей",
+      "classroom": "32-02 (Гастелло 15)",
+      "teacherName": "Ассаул В.Н."
+    },
+    {
+      "group": "4515",
+      "weekday": 4,
+      "start": "17:00",
+      "end": "18:30",
+      "week": "lower",
+      "discipline": "Теория вероятностей",
+      "classroom": "12-04 (Гастелло 15)",
+      "teacherName": "Кондратьева Т.Э."
+    },
+    {
+      "group": "4515",
+      "weekday": 5,
+      "start": "09:30",
+      "end": "11:00",
+      "week": "upper",
+      "discipline": "Экономика",
+      "classroom": "22-09 (Ленсовета 14)",
+      "teacherName": "Самойлов А.В."
+    },
+    {
+      "group": "4515",
+      "weekday": 6,
+      "start": "09:30",
+      "end": "11:00",
+      "week": "lower",
+      "discipline": "Основы программирования",
+      "classroom": "22-09 (Б. Морская 67)",
+      "teacherName": "Мустафин Т.Р."
+    },
+    {
+      "group": "4515",
+      "weekday": 6,
+      "start": "11:10",
+      "end": "12:40",
+      "week": "every",
+      "discipline": "Основы программирования",
+      "classroom": "32-04 (Б. Морская 67)",
+      "teacherName": "Куртяник Д.В."
+    },
+    {
+      "group": "4515",
+      "weekday": 6,
+      "start": "13:00",
+      "end": "14:30",
+      "week": "upper",
+      "discipline": "Основы программирования",
+      "classroom": "52-09 (Б. Морская 67)",
+      "teacherName": "Мустафин Т.Р."
+    },
+    {
+      "group": "4516",
+      "weekday": 1,
+      "start": "15:10",
+      "end": "16:40",
+      "week": "every",
+      "discipline": "Алгоритмы и структуры данных",
+      "classroom": "53-09 (Б. Морская 67)",
+      "teacherName": "Соловьева Н.А."
+    },
+    {
+      "group": "4516",
+      "weekday": 1,
+      "start": "17:00",
+      "end": "18:30",
+      "week": "every",
+      "discipline": "Компьютерная графика",
+      "classroom": "52-09 (Б. Морская 67)",
+      "teacherName": "Мирошниченко Н.И."
+    },
+    {
+      "group": "4516",
+      "weekday": 2,
+      "start": "17:00",
+      "end": "18:30",
+      "week": "every",
+      "discipline": "Компьютерная графика",
+      "classroom": "52-18 (Б. Морская 67)",
+      "teacherName": "Булгаков Д.А."
+    },
+    {
+      "group": "4516",
+      "weekday": 2,
+      "start": "18:40",
+      "end": "20:10",
+      "week": "every",
+      "discipline": "Алгоритмы и структуры данных",
+      "classroom": "53-07 (Б. Морская 67)",
+      "teacherName": "Чернышев С.А."
+    },
+    {
+      "group": "4516",
+      "weekday": 4,
+      "start": "09:30",
+      "end": "11:00",
+      "week": "every",
+      "discipline": "Основы проектной деятельности",
+      "classroom": "22-15 (Б. Морская 67)",
+      "teacherName": "Максатулин М.М."
+    },
+    {
+      "group": "4516",
+      "weekday": 4,
+      "start": "15:10",
+      "end": "16:40",
+      "week": "every",
+      "discipline": "Теория вероятностей",
+      "classroom": "32-02 (Гастелло 15)",
+      "teacherName": "Ассаул В.Н."
+    },
+    {
+      "group": "4516",
+      "weekday": 4,
+      "start": "17:00",
+      "end": "18:30",
+      "week": "upper",
+      "discipline": "Экономика",
+      "classroom": "24-06 (Ленсовета 14)",
+      "teacherName": "Дроздова А.П."
+    },
+    {
+      "group": "4516",
+      "weekday": 5,
+      "start": "09:30",
+      "end": "11:00",
+      "week": "lower",
+      "discipline": "Информационное право",
+      "classroom": "12-14 (Ленсовета 14)",
+      "teacherName": "Беззатеева В.С."
+    },
+    {
+      "group": "4516",
+      "weekday": 5,
+      "start": "09:30",
+      "end": "11:00",
+      "week": "upper",
+      "discipline": "Экономика",
+      "classroom": "22-09 (Ленсовета 14)",
+      "teacherName": "Самойлов А.В."
+    },
+    {
+      "group": "4516",
+      "weekday": 5,
+      "start": "11:10",
+      "end": "12:40",
+      "week": "lower",
+      "discipline": "Теория вероятностей",
+      "classroom": "22-04 (Гастелло 15)",
+      "teacherName": "Кондратьева Т.Э."
+    },
+    {
+      "group": "4516",
+      "weekday": 5,
+      "start": "13:00",
+      "end": "14:30",
+      "week": "every",
+      "discipline": "Прикладная физическая культура (элективный модуль)",
+      "classroom": "спортзал (Ленсовета 14)"
+    },
+    {
+      "group": "4516",
+      "weekday": 6,
+      "start": "09:30",
+      "end": "11:00",
+      "week": "upper",
+      "discipline": "Основы программирования",
+      "classroom": "52-07 (Б. Морская 67)",
+      "teacherName": "Рыжов К.Ю."
+    },
+    {
+      "group": "4516",
+      "weekday": 6,
+      "start": "11:10",
+      "end": "12:40",
+      "week": "every",
+      "discipline": "Основы программирования",
+      "classroom": "32-04 (Б. Морская 67)",
+      "teacherName": "Куртяник Д.В."
+    },
+    {
+      "group": "4516",
+      "weekday": 6,
+      "start": "13:00",
+      "end": "14:30",
+      "week": "lower",
+      "discipline": "Основы программирования",
+      "classroom": "52-07 (Б. Морская 67)",
+      "teacherName": "Рыжов К.Ю."
+    },
+    {
+      "group": "4517",
+      "weekday": 1,
+      "start": "15:10",
+      "end": "16:40",
+      "week": "every",
+      "discipline": "Основы проектной деятельности",
+      "classroom": "22-15 (Б. Морская 67)",
+      "teacherName": "Максатулин М.М."
+    },
+    {
+      "group": "4517",
+      "weekday": 2,
+      "start": "17:00",
+      "end": "18:30",
+      "week": "every",
+      "discipline": "Компьютерная графика",
+      "classroom": "52-18 (Б. Морская 67)",
+      "teacherName": "Булгаков Д.А."
+    },
+    {
+      "group": "4517",
+      "weekday": 2,
+      "start": "18:40",
+      "end": "20:10",
+      "week": "every",
+      "discipline": "Алгоритмы и структуры данных",
+      "classroom": "53-07 (Б. Морская 67)",
+      "teacherName": "Чернышев С.А."
+    },
+    {
+      "group": "4517",
+      "weekday": 3,
+      "start": "13:00",
+      "end": "14:30",
+      "week": "every",
+      "discipline": "Алгоритмы и структуры данных",
+      "classroom": "52-19 (Б. Морская 67)",
+      "teacherName": "Соловьева Н.А."
+    },
+    {
+      "group": "4517",
+      "weekday": 3,
+      "start": "15:10",
+      "end": "16:40",
+      "week": "every",
+      "discipline": "Компьютерная графика",
+      "classroom": "52-17 (Б. Морская 67)",
+      "teacherName": "Мирошниченко Н.И."
+    },
+    {
+      "group": "4517",
+      "weekday": 4,
+      "start": "13:00",
+      "end": "14:30",
+      "week": "upper",
+      "discipline": "Информационное право",
+      "classroom": "34-04 (Ленсовета 14)",
+      "teacherName": "Беззатеева В.С."
+    },
+    {
+      "group": "4517",
+      "weekday": 4,
+      "start": "15:10",
+      "end": "16:40",
+      "week": "every",
+      "discipline": "Теория вероятностей",
+      "classroom": "32-02 (Гастелло 15)",
+      "teacherName": "Ассаул В.Н."
+    },
+    {
+      "group": "4517",
+      "weekday": 4,
+      "start": "17:00",
+      "end": "18:30",
+      "week": "lower",
+      "discipline": "Экономика",
+      "classroom": "24-06 (Ленсовета 14)",
+      "teacherName": "Дроздова А.П."
+    },
+    {
+      "group": "4517",
+      "weekday": 5,
+      "start": "09:30",
+      "end": "11:00",
+      "week": "lower",
+      "discipline": "Теория вероятностей",
+      "classroom": "22-10 (Гастелло 15)",
+      "teacherName": "Кондратьева Т.Э."
+    },
+    {
+      "group": "4517",
+      "weekday": 5,
+      "start": "09:30",
+      "end": "11:00",
+      "week": "upper",
+      "discipline": "Экономика",
+      "classroom": "22-09 (Ленсовета 14)",
+      "teacherName": "Самойлов А.В."
+    },
+    {
+      "group": "4517",
+      "weekday": 5,
+      "start": "13:00",
+      "end": "14:30",
+      "week": "every",
+      "discipline": "Прикладная физическая культура (элективный модуль)",
+      "classroom": "спортзал (Ленсовета 14)"
+    },
+    {
+      "group": "4517",
+      "weekday": 6,
+      "start": "09:30",
+      "end": "11:00",
+      "week": "lower",
+      "discipline": "Основы программирования",
+      "classroom": "52-07 (Б. Морская 67)",
+      "teacherName": "Рыжов К.Ю."
+    },
+    {
+      "group": "4517",
+      "weekday": 6,
+      "start": "11:10",
+      "end": "12:40",
+      "week": "every",
+      "discipline": "Основы программирования",
+      "classroom": "32-04 (Б. Морская 67)",
+      "teacherName": "Куртяник Д.В."
+    },
+    {
+      "group": "4517",
+      "weekday": 6,
+      "start": "13:00",
+      "end": "14:30",
+      "week": "upper",
+      "discipline": "Основы программирования",
+      "classroom": "52-07 (Б. Морская 67)",
+      "teacherName": "Рыжов К.Ю."
+    }
+  ]
+}

@@ -42,6 +42,7 @@ model Group {
   name    String @unique
   users   User[]
   lessons Lesson[]
+  scheduleEntries ScheduleEntry[]
 }
 
 model Building {
@@ -174,4 +175,17 @@ model TelegramNotification {
 model Discipline {
   id   Int    @id @default(autoincrement())
   name String @unique
+}
+model ScheduleEntry {
+  id          Int      @id @default(autoincrement())
+  groupId     Int
+  group       Group    @relation(fields: [groupId], references: [id])
+  discipline  String
+  classroom   String
+  teacherName String?
+  startsAt    DateTime
+  endsAt      DateTime
+
+  @@index([groupId, startsAt])
+  @@unique([groupId, startsAt, discipline, classroom])
 }
