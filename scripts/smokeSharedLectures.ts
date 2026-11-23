@@ -147,6 +147,88 @@ async function main() {
   assert(attendances.status === 200 && ids.has(first.id) && ids.has(second.id) && !ids.has(third.id),
     "Teacher attendance list did not include the two allowed students");
 
+  // The primary group plus four distinct additional IDs must be rejected,
+  // even when the optional array itself contains only four elements.
+  const tooManyGroups = await request("POST", "/api/lessons", teacher.token, {
+    discipline: discipline.name,
+    groupId: g1,
+    groupIds: [g2, outsider, 999998, 999999],
+    classroomId,
+    startsAt: new Date(Date.UTC(2027, 5, 26, 11, 0)).toISOString(),
+    endsAt: new Date(Date.UTC(2027, 5, 26, 12, 30)).toISOString(),
+  });
+  assert(tooManyGroups.status === 400 &&
+    tooManyGroups.body.message === "A lesson can contain no more than four groups",
+    "The four-group limit must include the primary group");
+
+  const duplicate = await request("POST", markPath, first.token, payload);
+  assert([400, 409].includes(duplicate.status),
+    "Repeated QR scan must not create a second attendance");
+
+  const history = await request("GET", "/api/attendance/history", second.token);
+  assert(history.status === 200 && history.body.attendances.some(
+    (record: any) =>
+      record.lessonId === lessonId &&
+      record.lesson?.group?.name === "4515",
+  ), "Group 4515 history must display the student's own group");
+
+  // A teacher may finish early, but statistics must wait until endsAt.
+  const finished = await request("PATCH", `/api/lessons/${lessonId}/finish`, teacher.token);
+  assert(finished.status === 200, "Teacher could not finish the temporary lesson");
+
+  const earlyStats = await request("GET", "/api/attendance/teacher/stats", teacher.token);
+  assert(earlyStats.status === 200 && earlyStats.body.totalLessons === 0,
+    "A prematurely finished lesson must not enter final statistics");
+
+  const approved = await request(
+    "PATCH", `/api/attendance/${a.body.attendance.id}/approve`, teacher.token,
+  );
+  assert(approved.status === 200 && approved.body.attendance?.status === "PRESENT",
+    "Teacher could not approve group 4514 attendance");
+
+  const rejected = await request(
+    "PATCH", `/api/attendance/${b.body.attendance.id}/reject`, teacher.token,
+    { rejectionReason: "SMOKE test rejection" },
+  );
+  assert(rejected.status === 200 && rejected.body.attendance?.status === "REJECTED",
+    "Teacher could not reject group 4515 attendance");
+
+  // Advance only this temporary lesson beyond endsAt for final-stats checks.
+  await prisma.lesson.update({
+    where: { id: lessonId },
+    data: { endsAt: new Date(Date.now() - 1000) },
+  });
+
+  const teacherStats = await request("GET", "/api/attendance/teacher/stats", teacher.token);
+  assert(teacherStats.status === 200 &&
+    teacherStats.body.totalLessons === 1 &&
+    teacherStats.body.attendedStudents === 1,
+    "Teacher summary must count exactly one approved mark in the shared lecture");
+
+  const groupStats = await request("GET", "/api/attendance/teacher/groups/stats", teacher.token);
+  const byGroup = new Map<string, any>(
+    (groupStats.body.stats ?? []).map((item: any) => [item.groupName, item]),
+  );
+  assert(groupStats.status === 200 &&
+    byGroup.get("4514")?.totalLessons === 1 &&
+    byGroup.get("4514")?.attendedStudents === 1 &&
+    byGroup.get("4515")?.totalLessons === 1 &&
+    byGroup.get("4515")?.attendedStudents === 0,
+    "Shared lecture teacher stats must be split correctly by group");
+
+  const studentStats = await request("GET", "/api/attendance/stats", second.token);
+  assert(studentStats.status === 200 &&
+    studentStats.body.rejectedLessons >= 1 &&
+    studentStats.body.attendedLessons === 0,
+    "Group 4515 rejected mark must appear in its own student statistics");
+
+  console.log("PASS: four-group limit includes primary group");
+  console.log("PASS: duplicate scan does not create an extra mark");
+  console.log("PASS: group 4515 attendance history displays 4515");
+  console.log("PASS: early finish excluded until scheduled end");
+  console.log("PASS: teacher approval/rejection and per-group stats");
+  console.log("PASS: group 4515 sees its rejection in student stats");
+
   console.log("PASS: common lesson created for 4514 and 4515");
   console.log("PASS: same QR accepted for both allowed groups");
   console.log("PASS: 4516 student denied with HTTP 403");
