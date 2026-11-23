@@ -80,6 +80,12 @@ export async function createLesson(req: AuthRequest, res: Response) {
       });
     }
 
+    if (participatingGroupIds.length > 4) {
+      return res.status(400).json({
+        message: "A lesson can contain no more than four groups",
+      });
+    }
+
     if (
       !Number.isInteger(normalizedClassroomId) ||
       normalizedClassroomId <= 0
