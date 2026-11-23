@@ -142,6 +142,20 @@ async function main() {
   assert(c.status === 403,
     `OUTSIDER was not forbidden: ${c.status} ${JSON.stringify(c.body)}`);
 
+  // WebAuthn endpoints must be tied to the owner of this PENDING attendance.
+  const ownedOptions = await request(
+    "POST", `/api/attendance/${a.body.attendance.id}/device/options`, first.token,
+  );
+  assert(ownedOptions.status === 409 &&
+    ownedOptions.body.code === "NO_REGISTERED_CREDENTIAL",
+    "Unregistered student must not bypass WebAuthn enrolment");
+
+  const anotherStudentOptions = await request(
+    "POST", `/api/attendance/${a.body.attendance.id}/device/options`, second.token,
+  );
+  assert(anotherStudentOptions.status === 403,
+    "Student from another group must not verify someone else's attendance");
+
   const attendances = await request("GET", `/api/attendance/lesson/${lessonId}`, teacher.token);
   const ids = new Set((attendances.body.attendances ?? []).map((item: any) => item.studentId));
   assert(attendances.status === 200 && ids.has(first.id) && ids.has(second.id) && !ids.has(third.id),
@@ -233,6 +247,7 @@ async function main() {
   console.log("PASS: same QR accepted for both allowed groups");
   console.log("PASS: 4516 student denied with HTTP 403");
   console.log("PASS: teacher sees both attendance records");
+  console.log("PASS: WebAuthn requires registered key and attendance ownership");
   console.log("Temporary data cleanup starts automatically.");
 }
 
