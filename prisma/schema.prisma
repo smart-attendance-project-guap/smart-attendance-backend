@@ -42,6 +42,7 @@ model Group {
   name    String @unique
   users   User[]
   lessons Lesson[]
+  lessonGroups LessonGroup[]
   scheduleEntries ScheduleEntry[]
 }
 
@@ -79,6 +80,7 @@ model Lesson {
   classroom   Classroom    @relation(fields: [classroomId], references: [id])
   attendances Attendance[]
   telegramNotifications TelegramNotification[]
+  lessonGroups LessonGroup[]
 }
 
 model Attendance {
@@ -188,4 +190,16 @@ model ScheduleEntry {
 
   @@index([groupId, startsAt])
   @@unique([groupId, startsAt, discipline, classroom])
+}
+
+
+model LessonGroup {
+  lessonId Int
+  groupId  Int
+
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  group  Group  @relation(fields: [groupId], references: [id])
+
+  @@id([lessonId, groupId])
+  @@index([groupId])
 }

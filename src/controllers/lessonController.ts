@@ -18,7 +18,7 @@ export async function createLesson(req: AuthRequest, res: Response) {
       });
     }
 
-    const { discipline, groupId, classroomId, startsAt, endsAt } = req.body;
+    const { discipline, groupId, groupIds, classroomId, startsAt, endsAt } = req.body;
 
     if (typeof discipline !== "string" || !discipline.trim()) {
       return res.status(400).json({
@@ -58,12 +58,31 @@ export async function createLesson(req: AuthRequest, res: Response) {
     const normalizedGroupId = Number(groupId);
     const normalizedClassroomId = Number(classroomId);
 
+    // Optional list for shared lectures. Existing single-group requests still work.
+    if (
+      groupIds !== undefined &&
+      (!Array.isArray(groupIds) ||
+        groupIds.length > 4 ||
+        groupIds.some((id: unknown) => typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0))
+    ) {
+      return res.status(400).json({ message: "groupIds must contain up to four valid group IDs" });
+    }
+    const participatingGroupIds = [
+      ...new Set<number>([normalizedGroupId, ...(groupIds ?? [])]),
+    ];
+
     if (
       !Number.isInteger(normalizedGroupId) ||
       normalizedGroupId <= 0
     ) {
       return res.status(400).json({
         message: "Invalid groupId",
+      });
+    }
+
+    if (participatingGroupIds.length > 4) {
+      return res.status(400).json({
+        message: "A lesson can contain no more than four groups",
       });
     }
 
@@ -97,6 +116,13 @@ export async function createLesson(req: AuthRequest, res: Response) {
       return res.status(404).json({
         message: "Group not found",
       });
+    }
+
+    const availableGroups = await prisma.group.count({
+      where: { id: { in: participatingGroupIds } },
+    });
+    if (availableGroups !== participatingGroupIds.length) {
+      return res.status(404).json({ message: "One or more groups were not found" });
     }
 
     const classroom = await prisma.classroom.findUnique({
@@ -134,7 +160,8 @@ export async function createLesson(req: AuthRequest, res: Response) {
         endsAt: { gt: start },
         OR: [
           { classroomId: normalizedClassroomId },
-          { groupId: normalizedGroupId },
+          { groupId: { in: participatingGroupIds } },
+          { lessonGroups: { some: { groupId: { in: participatingGroupIds } } } },
           { teacherId: req.user.userId },
         ],
       },
@@ -143,6 +170,7 @@ export async function createLesson(req: AuthRequest, res: Response) {
         classroomId: true,
         groupId: true,
         teacherId: true,
+        lessonGroups: { select: { groupId: true } },
       },
     });
 
@@ -153,7 +181,10 @@ export async function createLesson(req: AuthRequest, res: Response) {
         });
       }
 
-      if (conflictingLesson.groupId === normalizedGroupId) {
+      if (
+        participatingGroupIds.includes(conflictingLesson.groupId) ||
+        conflictingLesson.lessonGroups.some((g) => participatingGroupIds.includes(g.groupId))
+      ) {
         return res.status(409).json({
           message: "Group already has a lesson at this time",
         });
@@ -172,12 +203,22 @@ export async function createLesson(req: AuthRequest, res: Response) {
         classroomId: normalizedClassroomId,
         startsAt: start,
         endsAt: end,
+        ...(participatingGroupIds.length > 1
+          ? {
+              lessonGroups: {
+                create: participatingGroupIds
+                  .filter((id) => id !== normalizedGroupId)
+                  .map((groupId) => ({ groupId })),
+              },
+            }
+          : {}),
       },
     });
 
     return res.status(201).json({
       message: "Lesson created",
       lesson,
+      groupIds: participatingGroupIds,
     });
   } catch (error) {
     console.error(error);
@@ -440,6 +481,7 @@ export async function getTeacherLessons(
       },
       include: {
         group: true,
+        lessonGroups: { include: { group: true } },
         classroom: true,
       },
       orderBy: {
