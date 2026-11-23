@@ -3,7 +3,7 @@ import { prisma } from "../prisma.js";
 
 const REMINDER_MINUTES = 15;
 
-export async function scheduleUpcomingTelegramReminders() {
+export async function scheduleUpcomingTelegramReminders(lessonIds?: number[]) {
   const now = new Date();
 
   const reminderWindowEnd = new Date(
@@ -12,6 +12,8 @@ export async function scheduleUpcomingTelegramReminders() {
 
   const lessons = await prisma.lesson.findMany({
     where: {
+      // Optional restriction lets the isolated smoke test avoid real lessons.
+      ...(lessonIds !== undefined ? { id: { in: lessonIds } } : {}),
       startsAt: {
         gt: now,
         lte: reminderWindowEnd,
@@ -74,12 +76,13 @@ export async function scheduleUpcomingTelegramReminders() {
 }
 
 
-export async function scheduleMissedTelegramNotifications() {
+export async function scheduleMissedTelegramNotifications(lessonIds?: number[]) {
   const now = new Date();
   const windowStart = new Date(now.getTime() - 10 * 60_000);
 
   const lessons = await prisma.lesson.findMany({
     where: {
+      ...(lessonIds !== undefined ? { id: { in: lessonIds } } : {}),
       OR: [
         {
           finishedAt: { gt: windowStart, lte: now },
