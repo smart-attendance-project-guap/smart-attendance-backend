@@ -26,7 +26,7 @@ For a shared lecture, send optional `groupIds` including the primary group if de
   "endsAt": "2026-11-24T16:40:00+03:00"
 }
 ```
-All IDs are **database IDs** obtained from `GET /api/groups`, not group names. These numbers are illustrative only.
+All IDs are **database IDs** obtained from `GET /api/groups`, not group names. These numbers are illustrative only. The total number of distinct groups (primary `groupId` plus `groupIds`) is limited to **four**; a fifth group returns HTTP 400.
 
 The primary group is in `Lesson.groupId` for compatibility with old clients, other groups are in `LessonGroup`. The backend validates all groups and prevents overlaps with existing single- or multi-group lessons, classrooms or teacher times.
 
@@ -46,5 +46,6 @@ Teacher creation form: keep the existing single-group selection for ordinary les
 - Confirm `npm.cmd run build`.
 - Verify one shared lesson for groups 4514 and 4515 allows both, but rejects students from a third group.
 - Confirm teacher absent lists and stats consider both groups.
+- Run `npx.cmd tsx scripts/smokeSharedLectures.ts` to check HTTP creation, shared QR permissions, duplicate rejection, group-specific history, teacher decision, and summary statistics. The script creates temporary data and removes it afterwards.
 - Confirm one reminder and missed notification per eligible student.
 - Existing one-group lesson must still work.
