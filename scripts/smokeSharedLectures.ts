@@ -9,6 +9,11 @@ import { generateToken } from "../src/utils/jwt.js";
 import lessonRoutes from "../src/routes/lessonRoutes.js";
 import attendanceRoutes from "../src/routes/attendanceRoutes.js";
 
+// Only this isolated smoke test needs local WebAuthn defaults.
+// The production backend still requires its own explicit WebAuthn configuration.
+process.env.WEBAUTHN_ORIGIN ||= "http://localhost:3001";
+process.env.WEBAUTHN_RP_ID ||= "localhost";
+
 const app = express();
 app.use(express.json());
 app.use("/api/lessons", lessonRoutes);
@@ -148,13 +153,13 @@ async function main() {
   );
   assert(ownedOptions.status === 409 &&
     ownedOptions.body.code === "NO_REGISTERED_CREDENTIAL",
-    "Unregistered student must not bypass WebAuthn enrolment");
+    `Unregistered student must not bypass WebAuthn enrolment: HTTP ${ownedOptions.status}, ${JSON.stringify(ownedOptions.body)}`);
 
   const anotherStudentOptions = await request(
     "POST", `/api/attendance/${a.body.attendance.id}/device/options`, second.token,
   );
   assert(anotherStudentOptions.status === 403,
-    "Student from another group must not verify someone else's attendance");
+    `Student from another group must not verify someone else's attendance: HTTP ${anotherStudentOptions.status}, ${JSON.stringify(anotherStudentOptions.body)}`);
 
   const attendances = await request("GET", `/api/attendance/lesson/${lessonId}`, teacher.token);
   const ids = new Set((attendances.body.attendances ?? []).map((item: any) => item.studentId));
