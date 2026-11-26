@@ -11,6 +11,7 @@ import webAuthnRegistrationRoutes from "./routes/webauthnRegistrationRoutes.js";
 
 import authRoutes from "./routes/authRoutes.js";
 import lessonRoutes from "./routes/lessonRoutes.js";
+import lessonGuestRoutes from "./routes/lessonGuestRoutes.js";
 import attendanceRoutes from "./routes/attendanceRoutes.js";
 import attendanceExportRoutes from "./routes/attendanceExportRoutes.js";
 import referenceRoutes from "./routes/referenceRoutes.js";
@@ -35,6 +36,7 @@ app.use(express.json());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/devices/webauthn", webAuthnRegistrationRoutes);
+app.use("/api/lessons", lessonGuestRoutes);
 app.use("/api/lessons", lessonRoutes);
 app.use("/api/attendance", attendanceExportRoutes);
 app.use("/api/attendance", attendanceRoutes);
