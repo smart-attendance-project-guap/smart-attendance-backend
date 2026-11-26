@@ -354,13 +354,25 @@ async function main() {
     ownLessonHistory.lesson.group?.name === "4515",
     "Student history leaked QR secrets or lost non-sensitive lesson metadata");
 
-  // A teacher may finish early, but statistics must wait until endsAt.
+  // Finishing before the scheduled endsAt counts immediately in all summaries.
   const finished = await request("PATCH", `/api/lessons/${lessonId}/finish`, teacher.token);
   assert(finished.status === 200, "Teacher could not finish the temporary lesson");
 
   const earlyStats = await request("GET", "/api/attendance/teacher/stats", teacher.token);
-  assert(earlyStats.status === 200 && earlyStats.body.totalLessons === 0,
-    "A prematurely finished lesson must not enter final statistics");
+  assert(earlyStats.status === 200 &&
+    earlyStats.body.totalLessons === 1 &&
+    earlyStats.body.attendedStudents === 0,
+    "Early finish must count immediately, but PENDING is not yet approved");
+
+  const earlyStudentStats = await request("GET", "/api/attendance/stats", second.token);
+  assert(earlyStudentStats.status === 200 &&
+    earlyStudentStats.body.totalLessons === 1 &&
+    earlyStudentStats.body.attendedLessons === 0 &&
+    earlyStudentStats.body.missedLessons === 1,
+    "Student stats must include early-finished lesson, even before review");
+
+  const closedQr = await request("POST", `/api/lessons/${lessonId}/qr`, teacher.token);
+  assert(closedQr.status === 400, "QR must stay closed after early finish");
 
   const approved = await request(
     "PATCH", `/api/attendance/${a.body.attendance.id}/approve`, teacher.token,
@@ -374,12 +386,6 @@ async function main() {
   );
   assert(rejected.status === 200 && rejected.body.attendance?.status === "REJECTED",
     "Teacher could not reject group 4515 attendance");
-
-  // Advance only this temporary lesson beyond endsAt for final-stats checks.
-  await prisma.lesson.update({
-    where: { id: lessonId },
-    data: { endsAt: new Date(Date.now() - 1000) },
-  });
 
   const teacherStats = await request("GET", "/api/attendance/teacher/stats", teacher.token);
   assert(teacherStats.status === 200 &&
@@ -408,7 +414,7 @@ async function main() {
   console.log("PASS: duplicate scan does not create an extra mark");
   console.log("PASS: group 4515 attendance history displays 4515");
   console.log("PASS: student attendance history never exposes active QR secrets");
-  console.log("PASS: early finish excluded until scheduled end");
+  console.log("PASS: early finish immediately counts in stats, QR closed, PENDING review remains possible");
   console.log("PASS: teacher approval/rejection and per-group stats");
   console.log("PASS: group 4515 sees its rejection in student stats");
 
