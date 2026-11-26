@@ -23,6 +23,7 @@ app.use("/api/attendance", attendanceRoutes);
 const server = createServer(app);
 
 let lessonId: number | undefined;
+let followupLessonId: number | undefined;
 let classroomId: number | undefined;
 const userIds: number[] = [];
 let port = 0;
@@ -390,9 +391,48 @@ async function main() {
     guestAttendanceList.body.absentStudents.every((student: any) => student.id !== third.id),
     "Teacher must see the guest separately from enrolled group members");
 
+  // A new lecture while the original is still active must be rejected.
+  const nextLessonInput = {
+    discipline: discipline.name,
+    groupId: g1,
+    groupIds: [g1, g2],
+    classroomId,
+    startsAt: new Date(now + 2 * 60_000).toISOString(),
+    endsAt: new Date(now + 20 * 60_000).toISOString(),
+  };
+  const collisionBeforeFinish = await request(
+    "POST", "/api/lessons", teacher.token, nextLessonInput,
+  );
+  assert(collisionBeforeFinish.status === 409,
+    "The original unfinished lecture must still occupy classroom, teacher and groups");
+
   // Finishing before the scheduled endsAt counts immediately in all summaries.
   const finished = await request("PATCH", `/api/lessons/${lessonId}/finish`, teacher.token);
-  assert(finished.status === 200, "Teacher could not finish the temporary lesson");
+  assert(finished.status === 200 && finished.body.lesson?.finishedAt,
+    "Teacher could not finish the temporary lesson");
+
+  // Overlap with the REAL completed interval must still be rejected.
+  const earlyFinishTime = new Date(finished.body.lesson.finishedAt).getTime();
+  const actualOverlap = await request("POST", "/api/lessons", teacher.token, {
+    ...nextLessonInput,
+    startsAt: new Date(now - 30_000).toISOString(),
+  });
+  assert(earlyFinishTime > now - 30_000 &&
+    earlyFinishTime < new Date(nextLessonInput.startsAt).getTime() &&
+    actualOverlap.status === 409,
+    "New lecture starting before the real finish must still be rejected");
+
+  // But immediately AFTER the real finish, room/group/teacher are released:
+  // the new lesson starts while the original scheduled endsAt is still ahead.
+  const allowedFollowup = await request(
+    "POST", "/api/lessons", teacher.token, nextLessonInput,
+  );
+  assert(allowedFollowup.status === 201 &&
+    Number.isInteger(allowedFollowup.body.lesson?.id),
+    `Early-finished lecture still blocks a later class: ${allowedFollowup.status} ${JSON.stringify(allowedFollowup.body)}`);
+  followupLessonId = allowedFollowup.body.lesson.id;
+  console.log("PASS: early finish frees teacher, groups and classroom before scheduled endsAt");
+  console.log("PASS: actual pre-finish overlap still rejected and unfinished lesson still blocks");
 
   const earlyStats = await request("GET", "/api/attendance/teacher/stats", teacher.token);
   assert(earlyStats.status === 200 &&
@@ -544,6 +584,10 @@ async function main() {
 
 async function cleanup() {
   try {
+    if (followupLessonId) {
+      await prisma.attendance.deleteMany({ where: { lessonId: followupLessonId } });
+      await prisma.lesson.delete({ where: { id: followupLessonId } });
+    }
     if (lessonId) {
       await prisma.attendance.deleteMany({ where: { lessonId } });
       await prisma.lesson.delete({ where: { id: lessonId } });
