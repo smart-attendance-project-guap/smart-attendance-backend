@@ -123,7 +123,7 @@ router.get("/teacher/export", authMiddleware, async (req: AuthRequest, res: Resp
       rows.push([student.lastName + " " + student.firstName, ...values, attended, missed]);
     }
 
-    const file = makeXlsx(rows);
+    const file = await makeXlsx(rows);
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", "attachment; filename=\"attendance-" + selectedGroup.name.replace(/[^0-9A-Za-z_-]/g, "_") + ".xlsx\"");
     res.setHeader("Cache-Control", "no-store");
