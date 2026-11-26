@@ -108,7 +108,7 @@ router.get("/teacher/export", authMiddleware, async (req: AuthRequest, res: Resp
       ["Группа: " + selectedGroup.name],
       ["Дисциплина: " + discipline.trim()],
       ["Период: " + fromRaw + " — " + toRaw],
-      ["Учтены завершённые занятия, как в статистике сайта; ожидающие/отклонённые отметки не считаются посещениями"],
+      ["Посещения — только подтверждённые; пропуски — после планового конца пары. Ожидающие отметки не считаются пропусками."],
       header,
     ];
     for (const student of students) {
@@ -117,12 +117,14 @@ router.get("/teacher/export", authMiddleware, async (req: AuthRequest, res: Resp
       const values = lessons.map((lesson) => {
         const record = lesson.attendances.find((entry) => entry.studentId === student.id);
         const completed = lesson.finishedAt !== null;
+        const scheduledEndReached = lesson.endsAt.getTime() <= now;
         const present = record?.status === "PRESENT" || record?.status === "LATE";
         if (completed) {
           if (present) attended++;
-          else missed++;
+          // Pending marks stay under review, never a confirmed absence.
+          else if (scheduledEndReached && (record === undefined || record.status === "REJECTED")) missed++;
         }
-        return label(record?.status, completed, lesson.startsAt.getTime() > now);
+        return label(record?.status, completed && scheduledEndReached, lesson.startsAt.getTime() > now);
       });
       rows.push([student.lastName + " " + student.firstName, ...values, attended, missed]);
     }
