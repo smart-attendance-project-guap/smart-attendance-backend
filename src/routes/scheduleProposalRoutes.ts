@@ -94,11 +94,6 @@ router.post("/:id/start", authMiddleware, async (req: AuthRequest, res: Response
     if (isAttendanceExcluded(schedule.discipline)) {
       return res.status(409).json({ message: "Physical education is excluded from attendance tracking" });
     }
-    const now = Date.now();
-    if (schedule.startsAt.getTime() - now > LOOKAHEAD_MINUTES * 60_000 ||
-        schedule.endsAt.getTime() <= now) {
-      return res.status(409).json({ message: "Lesson may be started only within its 30-minute suggestion window" });
-    }
     const siblings = schedule.sharedKey
       ? await prisma.scheduleEntry.findMany({
           where: { sharedKey: schedule.sharedKey }, orderBy: { id: "asc" },
@@ -118,37 +113,59 @@ router.post("/:id/start", authMiddleware, async (req: AuthRequest, res: Response
       where: { sourceScheduleEntryId: canonicalId },
       select: { id: true },
     });
+    // Idempotent retry: an already started lesson retains its original room,
+    // even if the request supplies a different classroomId or the time window has passed.
     if (existing) return res.json({ lessonId: existing.id, created: false });
+
+    const now = Date.now();
+    if (schedule.startsAt.getTime() - now > LOOKAHEAD_MINUTES * 60_000 ||
+        schedule.endsAt.getTime() <= now) {
+      return res.status(409).json({ message: "Lesson may be started only within its 30-minute suggestion window" });
+    }
 
     const discipline = await prisma.discipline.findFirst({
       where: { name: { equals: schedule.discipline, mode: "insensitive" } },
     });
     if (!discipline) return res.status(409).json({ message: "Schedule discipline missing from reference data" });
 
-    // Imported university timetables include the building in the room label.
-    // Keep that label in ScheduleEntry so reimporting updates existing rows
-    // instead of creating duplicates under a different classroom string.
-    const classroomLabel = schedule.classroom.trim();
-    const match = classroomLabel.match(/^(.+?)\s*\((Б\. Морская 67|Гастелло 15|Ленсовета 14)\)$/);
-    const roomName = match ? match[1]!.trim() : classroomLabel;
-    const buildingName = match
-      ? ({ "Б. Морская 67": "Большая Морская", "Гастелло 15": "Гастелло",
-           "Ленсовета 14": "Ленсовета" } as Record<string, string>)[match[2]!]
-      : undefined;
-    const classrooms = await prisma.classroom.findMany({
-      where: { name: roomName, ...(buildingName ? { building: { name: buildingName } } : {}) },
-      select: { id: true, name: true, building: { select: { name: true } } },
-    });
+    // A selected classroom may be ANY existing room. The original imported
+    // ScheduleEntry.classroom label must remain unchanged.
     const selectedClassroomId = req.body?.classroomId;
-    const classroomId = selectedClassroomId === undefined
-      ? (classrooms.length === 1 ? classrooms[0]!.id : null)
-      : selectedClassroomId;
-    if (typeof classroomId !== "number" || !Number.isSafeInteger(classroomId) ||
-        !classrooms.some((room) => room.id === classroomId)) {
-      return res.status(409).json({
-        message: "Choose the matching classroomId (room name may repeat across buildings)",
-        classrooms,
+    let classroomId: number;
+    if (selectedClassroomId !== undefined) {
+      if (typeof selectedClassroomId !== "number" ||
+          !Number.isSafeInteger(selectedClassroomId) || selectedClassroomId <= 0) {
+        return res.status(400).json({ message: "classroomId must be a positive integer" });
+      }
+      const selectedRoom = await prisma.classroom.findUnique({
+        where: { id: selectedClassroomId },
+        select: { id: true },
       });
+      if (!selectedRoom) {
+        return res.status(404).json({ message: "Classroom not found" });
+      }
+      classroomId = selectedRoom.id;
+    } else {
+      // No override: resolve the classroom from the imported timetable,
+      // including its building suffix to disambiguate duplicate room numbers.
+      const classroomLabel = schedule.classroom.trim();
+      const match = classroomLabel.match(/^(.+?)\s*\((Б\. Морская 67|Гастелло 15|Ленсовета 14)\)$/);
+      const roomName = match ? match[1]!.trim() : classroomLabel;
+      const buildingName = match
+        ? ({ "Б. Морская 67": "Большая Морская", "Гастелло 15": "Гастелло",
+             "Ленсовета 14": "Ленсовета" } as Record<string, string>)[match[2]!]
+        : undefined;
+      const classrooms = await prisma.classroom.findMany({
+        where: { name: roomName, ...(buildingName ? { building: { name: buildingName } } : {}) },
+        select: { id: true, name: true, building: { select: { name: true } } },
+      });
+      if (classrooms.length !== 1) {
+        return res.status(409).json({
+          message: "Choose the matching classroomId (room name may repeat across buildings)",
+          classrooms,
+        });
+      }
+      classroomId = classrooms[0]!.id;
     }
 
     const groupIds = [...new Set(siblings.map((s) => s.groupId))];
