@@ -4,6 +4,7 @@ import type { Response } from "express";
 import type { AuthRequest } from "../middleware/authMiddleware.js";
 import { authMiddleware } from "../middleware/authMiddleware.js";
 import { prisma } from "../prisma.js";
+import { isAttendanceExcluded } from "../utils/attendanceDisciplinePolicy.js";
 
 const router = Router();
 const SUPPORTED = new Set(["4514", "4515", "4516", "4517"]);
@@ -105,6 +106,10 @@ router.post("/import", authMiddleware, async (req: AuthRequest, res: Response) =
       }
       if (!nonempty(item.discipline) || !nonempty(item.classroom)) {
         errors.push({ row: rowNumber, message: "discipline and classroom are required" });
+        continue;
+      }
+      if (isAttendanceExcluded(item.discipline)) {
+        errors.push({ row: rowNumber, message: "Physical education is excluded from attendance tracking" });
         continue;
       }
       if (item.teacherName !== undefined && !nonempty(item.teacherName)) {
