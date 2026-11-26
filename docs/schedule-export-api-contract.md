@@ -12,9 +12,11 @@ Requires TEACHER; only own lessons for the selected group and discipline. Return
 Download via `fetch`, `response.blob()`, `URL.createObjectURL` and an `<a download="attendance.xlsx">`.
 Filter UI needs group, discipline, from, to. Max range 180 days.
 The sheet lists students, lesson dates in Moscow time, statuses and two totals. Totals count
-only `PRESENT`/`LATE` as attended and only teacher-finished, scheduled-end-passed
-lessons in the denominator, matching current `getAttendanceStats`. PENDING and
-REJECTED are distinguished, but counted as not attended on completed lessons.
+only `PRESENT`/`LATE` as attended and teacher-finished lessons
+(`finishedAt != null`) in the denominator, matching `getAttendanceStats`.
+Early teacher finish counts immediately, even when scheduled `endsAt` is future.
+PENDING and REJECTED are distinguished but not counted as attended until approved.
+A PENDING mark can be reviewed after lesson finish, updating the totals.
 
 ## Prepared schedule already in repository
 
