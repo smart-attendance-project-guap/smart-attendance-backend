@@ -248,11 +248,14 @@ export async function getMissedLessons(
           { lessonGroups: { some: { groupId: student.groupId } } },
         ],
         finishedAt: { not: null },
-        attendances: {
-          none: {
-            studentId: student.id,
-          },
-        },
+        endsAt: { lte: new Date() },
+        // A rejected mark is unsuccessful attendance. Pending stays under review.
+        AND: [
+          { OR: [
+            { attendances: { none: { studentId: student.id } } },
+            { attendances: { some: { studentId: student.id, status: "REJECTED" } } },
+          ] },
+        ],
       },
       select: {
         id: true,
@@ -423,7 +426,20 @@ export async function getAttendanceStats(
       return attendance?.status === "REJECTED";
     }).length;
 
-    const missedLessons = totalLessons - attendedLessons;
+    // Finishing early closes QR but an unmarked student is not yet a
+    // confirmed absence until the originally scheduled end.
+    const now = Date.now();
+    const missedLessons = trackedLessons.filter((lesson) => {
+      if (lesson.endsAt.getTime() > now) return false;
+      const status = lesson.attendances[0]?.status;
+      return status === undefined || status === "REJECTED";
+    }).length;
+    const pendingLessons = trackedLessons.filter(
+      (lesson) => lesson.attendances[0]?.status === "PENDING",
+    ).length;
+    const unmarkedLessons = trackedLessons.filter(
+      (lesson) => lesson.endsAt.getTime() > now && lesson.attendances.length === 0,
+    ).length;
 
     const attendancePercentage =
       totalLessons > 0
@@ -435,6 +451,8 @@ export async function getAttendanceStats(
       attendedLessons,
       missedLessons,
       rejectedLessons,
+      pendingLessons,
+      unmarkedLessons,
       attendancePercentage,
     });
   } catch (error) {
@@ -531,19 +549,16 @@ export async function getLessonAttendance(
       },
     });
 
-    const attendedStudentIds = new Set(
-      attendances
-        .filter(
-          (attendance) =>
-            attendance.status === "PRESENT" ||
-            attendance.status === "LATE",
-        )
-        .map((attendance) => attendance.studentId),
+    const attendanceByStudent = new Map(
+      attendances.map((attendance) => [attendance.studentId, attendance]),
     );
-
-    const absentStudents = students.filter(
-      (student) => !attendedStudentIds.has(student.id),
+    const deadlinePassed = lesson.finishedAt !== null &&
+      lesson.endsAt.getTime() <= Date.now();
+    const unmarkedStudents = students.filter(
+      (student) => !attendanceByStudent.has(student.id),
     );
+    // Pending is never an absence. Rejected marks remain explicitly labelled.
+    const absentStudents = deadlinePassed ? unmarkedStudents : [];
 
     return res.json({
       lessonId: lesson.id,
@@ -552,6 +567,8 @@ export async function getLessonAttendance(
         isGuest: !participatingGroupIds.includes(attendance.student.groupId ?? -1),
       })),
       absentStudents,
+      unmarkedStudents: deadlinePassed ? [] : unmarkedStudents,
+      attendanceFinalized: deadlinePassed,
     });
   } catch (error) {
     console.error(error);
@@ -974,20 +991,33 @@ export async function getTeacherLessonStats(
           ...lesson.lessonGroups.map((entry) => entry.group),
         ];
         // A shared lecture has one row per enrolled group. Guests stay outside all rows.
+        const deadlinePassed = lesson.endsAt.getTime() <= Date.now();
         const groupStats = await Promise.all(participatingGroups.map(async (group) => {
           const totalStudents = await prisma.user.count({
             where: { role: "STUDENT", groupId: group.id },
           });
-          const attendedStudents = lesson.attendances.filter(
-            (attendance) =>
-              attendance.student.groupId === group.id &&
-              (attendance.status === "PRESENT" || attendance.status === "LATE"),
+          const officialMarks = lesson.attendances.filter(
+            (attendance) => attendance.student.groupId === group.id,
+          );
+          const attendedStudents = officialMarks.filter(
+            (attendance) => attendance.status === "PRESENT" || attendance.status === "LATE",
           ).length;
+          const pendingStudents = officialMarks.filter(
+            (attendance) => attendance.status === "PENDING",
+          ).length;
+          const rejectedStudents = officialMarks.filter(
+            (attendance) => attendance.status === "REJECTED",
+          ).length;
+          const unmarkedStudents = Math.max(0, totalStudents - officialMarks.length);
           return {
             groupId: group.id,
             groupName: group.name,
             totalStudents,
             attendedStudents,
+            pendingStudents,
+            rejectedStudents,
+            unmarkedStudents: deadlinePassed ? 0 : unmarkedStudents,
+            missedStudents: deadlinePassed ? unmarkedStudents + rejectedStudents : 0,
             attendancePercentage: totalStudents > 0
               ? Number(((attendedStudents / totalStudents) * 100).toFixed(2))
               : 0,
@@ -1021,6 +1051,7 @@ export async function getTeacherLessonStats(
           attendedStudents,
           guestAttendedStudents,
           attendancePercentage,
+          attendanceFinalized: deadlinePassed,
         };
       }),
     );
