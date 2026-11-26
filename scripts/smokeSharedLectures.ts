@@ -408,8 +408,9 @@ async function main() {
   assert(earlyStudentStats.status === 200 &&
     earlyStudentStats.body.totalLessons === 1 &&
     earlyStudentStats.body.attendedLessons === 0 &&
-    earlyStudentStats.body.missedLessons === 1,
-    "Student stats must include early-finished lesson, even before review");
+    earlyStudentStats.body.missedLessons === 0 &&
+    earlyStudentStats.body.pendingLessons === 1,
+    "Early-finished PENDING lesson must not be a missed lesson before planned end");
 
   const closedQr = await request("POST", `/api/lessons/${lessonId}/qr`, teacher.token);
   assert(closedQr.status === 400, "QR must stay closed after early finish");
