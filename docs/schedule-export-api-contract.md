@@ -124,11 +124,31 @@ uses the actual lesson start time.
 Teacher chooses a suggestion:
 `POST /api/schedule/:id/start` (TEACHER; optional JSON `{"classroomId": 123}`).
 Response `{"lessonId":42,"created":true}`. Repeating the same start returns
-`{"lessonId":42,"created":false}`. If more than one registered classroom has
-the same name, HTTP 409 returns `{"classrooms":[{"id":...,"building":...}]}`;
-show these choices to the teacher and retry with `classroomId`.
-If the discipline is missing from reference data, add it to the reference seed
-first or return an actionable UI error.
+`{"lessonId":42,"created":false}` **without changing the original lesson's room**,
+even when a different `classroomId` is sent or the lesson's activation window has
+already passed.
+
+**Changing the classroom:** When `classroomId` is supplied, it may identify
+**any existing Classroom record**, not only a room with the same number as
+the imported timetable. For example, an imported schedule with classroom
+`101` may be started in `205` by specifying that room's DB ID. The lesson's
+`classroomId` reflects the teacher's choice; the source `ScheduleEntry.classroom`
+remains unchanged. The same collision checks still protect room, teacher and
+all participating (including shared) groups, respecting early `finishedAt`.
+Non-positive/malformed IDs return HTTP 400; nonexistent IDs return HTTP 404;
+resource conflicts return HTTP 409.
+
+When `classroomId` is **omitted**, Backend uses the unique matching room from
+the imported timetable. If the matching name is missing or ambiguous, HTTP 409
+returns `{"classrooms":[{"id":...,"building":...}]}`; show these choices to the
+teacher and retry with `classroomId`. For a free change of room, the Frontend
+should offer the full list of existing classrooms rather than only the timetable
+number. If the discipline is missing from reference data, add it to the reference
+seed first or return an actionable UI error.
+
+Regression: `npx.cmd tsx scripts/smokeScheduleClassroomSwitch.ts` on local
+`smart_attendance_mvp_test` tests 101 → 205, occupied room/teacher/group
+conflicts, unchanged timetable, idempotent retry, and default-room behavior.
 
 **Frontend:** let users dismiss suggestions locally; this must not mutate
 their student group or the source timetable. Present multiple suggestions as a list.
