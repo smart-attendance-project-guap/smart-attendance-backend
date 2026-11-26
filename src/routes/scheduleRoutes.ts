@@ -3,6 +3,7 @@ import type { Response } from "express";
 import type { AuthRequest } from "../middleware/authMiddleware.js";
 import { authMiddleware } from "../middleware/authMiddleware.js";
 import { prisma } from "../prisma.js";
+import { isAttendanceExcluded } from "../utils/attendanceDisciplinePolicy.js";
 
 const router = Router();
 const ADVANCE_MINUTES = 15;
@@ -45,7 +46,7 @@ router.get("/current", authMiddleware, async (req: AuthRequest, res: Response) =
       orderBy: { startsAt: "asc" },
     });
 
-    return res.json({ lessons });
+    return res.json({ lessons: lessons.filter((lesson) => !isAttendanceExcluded(lesson.discipline)) });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: "Failed to load current lessons" });
