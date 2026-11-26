@@ -64,7 +64,7 @@ function zip(files: Array<{ name: string; body: string }>): Buffer {
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
     local.writeUInt16LE(20, 4);
-    local.writeUInt16LE(8, 6); // UTF-8
+    local.writeUInt16LE(0x0800, 6); // UTF-8 filename flag; do not signal absent data descriptor
     local.writeUInt16LE(8, 8); // deflate
     local.writeUInt32LE(checksum, 14);
     local.writeUInt32LE(compressed.length, 18);
@@ -74,7 +74,7 @@ function zip(files: Array<{ name: string; body: string }>): Buffer {
     central.writeUInt32LE(0x02014b50, 0);
     central.writeUInt16LE(20, 4);
     central.writeUInt16LE(20, 6);
-    central.writeUInt16LE(8, 8);
+    central.writeUInt16LE(0x0800, 8); // match local flags
     central.writeUInt16LE(8, 10);
     central.writeUInt32LE(checksum, 16);
     central.writeUInt32LE(compressed.length, 20);
