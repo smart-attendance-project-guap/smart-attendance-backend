@@ -7,6 +7,33 @@ import { Prisma } from "../generated/prisma/client.js";
 import { enqueueAttendanceDecisionNotification } from "../services/telegramNotifications.js";
 import { isAttendanceExcluded } from "../utils/attendanceDisciplinePolicy.js";
 
+// Group membership determines the denominator. Authorized guests count separately.
+function countConfirmedParticipants(
+  attendances: Array<{
+    studentId: number;
+    status: string;
+    student: { groupId: number | null };
+  }>,
+  participatingGroupIds: number[],
+  authorizedGuestStudentIds: number[],
+): { attendedStudents: number; guestAttendedStudents: number } {
+  const groupIds = new Set(participatingGroupIds);
+  const guestIds = new Set(authorizedGuestStudentIds);
+  let attendedStudents = 0;
+  let guestAttendedStudents = 0;
+
+  for (const attendance of attendances) {
+    if (attendance.status !== "PRESENT" && attendance.status !== "LATE") continue;
+    if (attendance.student.groupId !== null && groupIds.has(attendance.student.groupId)) {
+      attendedStudents++;
+    } else if (guestIds.has(attendance.studentId)) {
+      guestAttendedStudents++;
+    }
+  }
+
+  return { attendedStudents, guestAttendedStudents };
+}
+
 export async function markAttendance(req: AuthRequest, res: Response) {
   try {
     if (!req.user) {
@@ -476,6 +503,7 @@ export async function getLessonAttendance(
             firstName: true,
             lastName: true,
             email: true,
+            groupId: true,
           },
         },
       },
@@ -519,7 +547,10 @@ export async function getLessonAttendance(
 
     return res.json({
       lessonId: lesson.id,
-      attendances,
+      attendances: attendances.map((attendance) => ({
+        ...attendance,
+        isGuest: !participatingGroupIds.includes(attendance.student.groupId ?? -1),
+      })),
       absentStudents,
     });
   } catch (error) {
@@ -847,8 +878,9 @@ export async function getTeacherAttendanceStats(
         },
       },
       include: {
-        attendances: true,
+        attendances: { include: { student: { select: { groupId: true } } } },
         lessonGroups: { select: { groupId: true } },
+        guests: { select: { studentId: true } },
       },
     });
 
@@ -857,6 +889,7 @@ export async function getTeacherAttendanceStats(
 
     let totalStudents = 0;
     let attendedStudents = 0;
+    let guestAttendedStudents = 0;
 
     for (const lesson of trackedLessons) {
       const students = await prisma.user.count({
@@ -868,11 +901,13 @@ export async function getTeacherAttendanceStats(
 
       totalStudents += students;
 
-      attendedStudents += lesson.attendances.filter(
-        (attendance) =>
-          attendance.status === "PRESENT" ||
-          attendance.status === "LATE",
-      ).length;
+      const counts = countConfirmedParticipants(
+        lesson.attendances,
+        [lesson.groupId, ...lesson.lessonGroups.map((g) => g.groupId)],
+        lesson.guests.map((guest) => guest.studentId),
+      );
+      attendedStudents += counts.attendedStudents;
+      guestAttendedStudents += counts.guestAttendedStudents;
     }
 
     const attendancePercentage =
@@ -884,6 +919,7 @@ export async function getTeacherAttendanceStats(
       totalLessons,
       totalStudents,
       attendedStudents,
+      guestAttendedStudents,
       attendancePercentage,
     });
   } catch (error) {
@@ -922,8 +958,9 @@ export async function getTeacherLessonStats(
       include: {
         group: true,
         classroom: true,
-        attendances: true,
+        attendances: { include: { student: { select: { groupId: true } } } },
         lessonGroups: { include: { group: true } },
+        guests: { select: { studentId: true } },
       },
       orderBy: {
         startsAt: "desc",
@@ -939,11 +976,11 @@ export async function getTeacherLessonStats(
           },
         });
 
-        const attendedStudents = lesson.attendances.filter(
-          (attendance) =>
-            attendance.status === "PRESENT" ||
-            attendance.status === "LATE",
-        ).length;
+        const { attendedStudents, guestAttendedStudents } = countConfirmedParticipants(
+          lesson.attendances,
+          [lesson.groupId, ...lesson.lessonGroups.map((g) => g.groupId)],
+          lesson.guests.map((guest) => guest.studentId),
+        );
 
         const attendancePercentage =
           totalStudents > 0
@@ -961,6 +998,7 @@ export async function getTeacherLessonStats(
           classroom: lesson.classroom,
           totalStudents,
           attendedStudents,
+          guestAttendedStudents,
           attendancePercentage,
         };
       }),
