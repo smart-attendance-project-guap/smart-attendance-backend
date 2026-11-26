@@ -1,5 +1,6 @@
 
 import { prisma } from "../prisma.js";
+import { isAttendanceExcluded } from "../utils/attendanceDisciplinePolicy.js";
 
 const REMINDER_MINUTES = 15;
 
@@ -22,6 +23,7 @@ export async function scheduleUpcomingTelegramReminders(lessonIds?: number[]) {
     },
     select: {
       id: true,
+      discipline: true,
       startsAt: true,
       lessonGroups: {
         select: {
@@ -51,7 +53,7 @@ export async function scheduleUpcomingTelegramReminders(lessonIds?: number[]) {
     },
   });
 
-  const notifications = lessons.flatMap((lesson) =>
+  const notifications = lessons.filter((lesson) => !isAttendanceExcluded(lesson.discipline)).flatMap((lesson) =>
     [...lesson.group.users, ...lesson.lessonGroups.flatMap((item) => item.group.users)]
       .map((student) => ({
       userId: student.id,
@@ -96,6 +98,7 @@ export async function scheduleMissedTelegramNotifications(lessonIds?: number[]) 
     },
     select: {
       id: true,
+      discipline: true,
       lessonGroups: {
         select: {
           group: {
@@ -125,7 +128,7 @@ export async function scheduleMissedTelegramNotifications(lessonIds?: number[]) 
     },
   });
 
-  const notifications = lessons.flatMap((lesson) => {
+  const notifications = lessons.filter((lesson) => !isAttendanceExcluded(lesson.discipline)).flatMap((lesson) => {
     const markedStudentIds = new Set(
       lesson.attendances.map((a) => a.studentId),
     );
