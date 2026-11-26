@@ -590,6 +590,7 @@ Authorization: Bearer <TEACHER_TOKEN>
   "totalLessons": 0,
   "totalStudents": 0,
   "attendedStudents": 0,
+  "guestAttendedStudents": 0,
   "attendancePercentage": 0
 }
 
@@ -610,7 +611,22 @@ Authorization: Bearer <TEACHER_TOKEN>
 - classroom
 - totalStudents
 - attendedStudents
+- guestAttendedStudents
 - attendancePercentage
+
+Здесь `totalStudents`, `attendedStudents` и `attendancePercentage`
+считаются только по студентам основной и дополнительных групп занятия.
+`guestAttendedStudents` отдельно показывает подтверждённых гостей
+(PRESENT/LATE), приглашённых через `/api/lessons/:id/guests`.
+Гость не входит в числитель и знаменатель посещаемости группы.
+Общий ответ `GET /api/attendance/teacher/stats` также содержит
+`guestAttendedStudents` — сумму подтверждённых гостевых посещений
+по завершённым занятиям. Один гость на разных занятиях считается
+отдельным посещением на каждом из них.
+Excel группы сохраняет только студентов выбранной группы;
+гостевые отметки в её строки и итоги не включаются.
+`GET /api/attendance/lesson/:id` дополнительно возвращает
+`isGuest: true` для отметок студентов вне участвующих групп.
 
 ---
 
