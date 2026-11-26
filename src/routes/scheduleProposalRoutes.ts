@@ -196,6 +196,7 @@ router.get("/available-lessons", authMiddleware, async (req: AuthRequest, res: R
         OR: [
           { groupId: user.groupId },
           { lessonGroups: { some: { groupId: user.groupId } } },
+          { guests: { some: { studentId: req.user.userId } } },
         ],
       },
       select: {
