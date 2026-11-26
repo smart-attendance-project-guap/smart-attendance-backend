@@ -3,6 +3,7 @@ import type { Response } from "express";
 import type { AuthRequest } from "../middleware/authMiddleware.js";
 import { authMiddleware } from "../middleware/authMiddleware.js";
 import { prisma } from "../prisma.js";
+import { isAttendanceExcluded } from "../utils/attendanceDisciplinePolicy.js";
 
 const router = Router();
 const LOOKAHEAD_MINUTES = 30;
@@ -39,15 +40,16 @@ router.get("/suggestions", authMiddleware, async (req: AuthRequest, res: Respons
       include: { group: { select: { id: true, name: true } } },
       orderBy: [{ startsAt: "asc" }, { id: "asc" }],
     });
-    const keys = visible.map((entry) => entry.sharedKey).filter((key): key is string => Boolean(key));
+    const eligible = visible.filter((entry) => !isAttendanceExcluded(entry.discipline));
+    const keys = eligible.map((entry) => entry.sharedKey).filter((key): key is string => Boolean(key));
     const siblings = keys.length
       ? await prisma.scheduleEntry.findMany({
           where: { sharedKey: { in: [...new Set(keys)] } },
           include: { group: { select: { id: true, name: true } } },
         })
       : [];
-    const all = [...visible, ...siblings];
-    const result = visible.map((entry) => {
+    const all = [...eligible, ...siblings.filter((entry) => !isAttendanceExcluded(entry.discipline))];
+    const result = eligible.map((entry) => {
       const related = entry.sharedKey
         ? all.filter((other) => other.sharedKey === entry.sharedKey)
         : [entry];
@@ -87,6 +89,9 @@ router.post("/:id/start", authMiddleware, async (req: AuthRequest, res: Response
     if (!schedule) return res.status(404).json({ message: "Schedule entry not found" });
     if (schedule.teacherId !== req.user.userId) {
       return res.status(403).json({ message: "Not your scheduled lesson" });
+    }
+    if (isAttendanceExcluded(schedule.discipline)) {
+      return res.status(409).json({ message: "Physical education is excluded from attendance tracking" });
     }
     const now = Date.now();
     if (schedule.startsAt.getTime() - now > LOOKAHEAD_MINUTES * 60_000 ||
@@ -218,7 +223,7 @@ router.get("/available-lessons", authMiddleware, async (req: AuthRequest, res: R
       orderBy: [{ startsAt: "asc" }, { id: "asc" }],
     });
     return res.json({
-      lessons: lessons.map(({ lessonGroups, group, ...lesson }) => ({
+      lessons: lessons.filter((lesson) => !isAttendanceExcluded(lesson.discipline)).map(({ lessonGroups, group, ...lesson }) => ({
         ...lesson,
         groups: [group, ...lessonGroups.map((entry) => entry.group)],
       })),
