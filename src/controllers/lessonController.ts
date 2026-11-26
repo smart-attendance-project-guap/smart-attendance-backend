@@ -3,6 +3,7 @@ import { prisma } from "../prisma.js";
 import type { AuthRequest } from "../middleware/authMiddleware.js";
 import { nanoid } from "nanoid";
 import { redisClient } from "../redis.js";
+import { isAttendanceExcluded } from "../utils/attendanceDisciplinePolicy.js";
 
 export async function createLesson(req: AuthRequest, res: Response) {
   try {
@@ -24,6 +25,10 @@ export async function createLesson(req: AuthRequest, res: Response) {
       return res.status(400).json({
         message: "discipline is required",
       });
+    }
+
+    if (isAttendanceExcluded(discipline)) {
+      return res.status(400).json({ message: "Physical education is excluded from attendance tracking" });
     }
 
     // Проверяем существование дисциплины в базе
@@ -346,6 +351,10 @@ export async function generateLessonQr(
       });
     }
 
+    if (isAttendanceExcluded(lesson.discipline)) {
+      return res.status(400).json({ message: "Physical education has no QR attendance" });
+    }
+
     const qrToken = nanoid(32);
     const qrExpiresAt = new Date(Date.now() + 15 * 1000);
 
@@ -490,7 +499,7 @@ export async function getTeacherLessons(
     });
 
     return res.json({
-      lessons,
+      lessons: lessons.filter((lesson) => !isAttendanceExcluded(lesson.discipline)),
     });
   } catch (error) {
     console.error(error);
