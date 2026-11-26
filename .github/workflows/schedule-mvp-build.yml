@@ -1,0 +1,27 @@
+name: Schedule and attendance export build
+
+on:
+  push:
+    branches: [feature-reports-and-schedule-mvp]
+  pull_request:
+    branches: [feature-backend]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run build
+      - run: npx tsx scripts/smokeXlsxExport.ts
+      - run: npx tsx scripts/smokePhysicalEducationExcluded.ts

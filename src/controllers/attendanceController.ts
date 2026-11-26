@@ -5,6 +5,34 @@ import { broadcast } from "../websocket.js";
 import type { AuthRequest } from "../middleware/authMiddleware.js";
 import { Prisma } from "../generated/prisma/client.js";
 import { enqueueAttendanceDecisionNotification } from "../services/telegramNotifications.js";
+import { isAttendanceExcluded } from "../utils/attendanceDisciplinePolicy.js";
+
+// Group membership determines the denominator. Authorized guests count separately.
+function countConfirmedParticipants(
+  attendances: Array<{
+    studentId: number;
+    status: string;
+    student: { groupId: number | null };
+  }>,
+  participatingGroupIds: number[],
+  authorizedGuestStudentIds: number[],
+): { attendedStudents: number; guestAttendedStudents: number } {
+  const groupIds = new Set(participatingGroupIds);
+  const guestIds = new Set(authorizedGuestStudentIds);
+  let attendedStudents = 0;
+  let guestAttendedStudents = 0;
+
+  for (const attendance of attendances) {
+    if (attendance.status !== "PRESENT" && attendance.status !== "LATE") continue;
+    if (attendance.student.groupId !== null && groupIds.has(attendance.student.groupId)) {
+      attendedStudents++;
+    } else if (guestIds.has(attendance.studentId)) {
+      guestAttendedStudents++;
+    }
+  }
+
+  return { attendedStudents, guestAttendedStudents };
+}
 
 export async function markAttendance(req: AuthRequest, res: Response) {
   try {
@@ -42,7 +70,7 @@ export async function markAttendance(req: AuthRequest, res: Response) {
       where: {
         id: lessonId,
       },
-      include: { lessonGroups: { select: { groupId: true } } },
+      include: { lessonGroups: { select: { groupId: true } }, guests: { where: { studentId: req.user.userId }, select: { studentId: true } } },
     });
 
     if (!lesson) {
@@ -55,6 +83,10 @@ export async function markAttendance(req: AuthRequest, res: Response) {
       return res.status(400).json({
         message: "Lesson is already finished",
       });
+    }
+
+    if (isAttendanceExcluded(lesson.discipline)) {
+      return res.status(400).json({ message: "Physical education does not use QR attendance" });
     }
 
     // Разрешаем отметку только во время занятия
@@ -93,7 +125,8 @@ export async function markAttendance(req: AuthRequest, res: Response) {
     if (
       student.groupId === null ||
       (student.groupId !== lesson.groupId &&
-        !lesson.lessonGroups.some((entry) => entry.groupId === student.groupId))
+        !lesson.lessonGroups.some((entry) => entry.groupId === student.groupId) &&
+        !lesson.guests.some((guest) => guest.studentId === student.id))
     ) {
       return res.status(403).json({
         message: "Student does not belong to this lesson group",
@@ -216,11 +249,13 @@ export async function getMissedLessons(
         ],
         finishedAt: { not: null },
         endsAt: { lte: new Date() },
-        attendances: {
-          none: {
-            studentId: student.id,
-          },
-        },
+        // A rejected mark is unsuccessful attendance. Pending stays under review.
+        AND: [
+          { OR: [
+            { attendances: { none: { studentId: student.id } } },
+            { attendances: { some: { studentId: student.id, status: "REJECTED" } } },
+          ] },
+        ],
       },
       select: {
         id: true,
@@ -247,7 +282,7 @@ export async function getMissedLessons(
     });
 
     return res.status(200).json({
-      missedLessons: missedLessons.map((lesson) => ({
+      missedLessons: missedLessons.filter((lesson) => !isAttendanceExcluded(lesson.discipline)).map((lesson) => ({
         ...lesson,
         group: student.group ?? lesson.group,
       })),
@@ -297,7 +332,7 @@ export async function getAttendanceHistory(
     });
 
     return res.json({
-      attendances: attendances.map(({ student, ...attendance }) => {
+      attendances: attendances.filter((item) => !isAttendanceExcluded(item.lesson.discipline)).map(({ student, ...attendance }) => {
         // QR tokens remain short-lived secrets. Never expose them via the
         // student's attendance history, even after the student marks a class.
         const { qrToken: _qrToken, qrExpiresAt: _qrExpiresAt, ...lesson } =
@@ -362,7 +397,6 @@ export async function getAttendanceStats(
           { lessonGroups: { some: { groupId: student.groupId } } },
         ],
         finishedAt: { not: null },
-        endsAt: { lte: new Date() },
       },
       include: {
         attendances: {
@@ -373,9 +407,10 @@ export async function getAttendanceStats(
       },
     });
 
-    const totalLessons = lessons.length;
+    const trackedLessons = lessons.filter((lesson) => !isAttendanceExcluded(lesson.discipline));
+    const totalLessons = trackedLessons.length;
 
-    const attendedLessons = lessons.filter((lesson) => {
+    const attendedLessons = trackedLessons.filter((lesson) => {
       const attendance = lesson.attendances[0];
 
       return (
@@ -385,13 +420,26 @@ export async function getAttendanceStats(
       );
     }).length;
 
-    const rejectedLessons = lessons.filter((lesson) => {
+    const rejectedLessons = trackedLessons.filter((lesson) => {
       const attendance = lesson.attendances[0];
 
       return attendance?.status === "REJECTED";
     }).length;
 
-    const missedLessons = totalLessons - attendedLessons;
+    // Finishing early closes QR but an unmarked student is not yet a
+    // confirmed absence until the originally scheduled end.
+    const now = Date.now();
+    const missedLessons = trackedLessons.filter((lesson) => {
+      if (lesson.endsAt.getTime() > now) return false;
+      const status = lesson.attendances[0]?.status;
+      return status === undefined || status === "REJECTED";
+    }).length;
+    const pendingLessons = trackedLessons.filter(
+      (lesson) => lesson.attendances[0]?.status === "PENDING",
+    ).length;
+    const unmarkedLessons = trackedLessons.filter(
+      (lesson) => lesson.endsAt.getTime() > now && lesson.attendances.length === 0,
+    ).length;
 
     const attendancePercentage =
       totalLessons > 0
@@ -403,6 +451,8 @@ export async function getAttendanceStats(
       attendedLessons,
       missedLessons,
       rejectedLessons,
+      pendingLessons,
+      unmarkedLessons,
       attendancePercentage,
     });
   } catch (error) {
@@ -456,6 +506,9 @@ export async function getLessonAttendance(
         message: "You can only view attendance for your own lessons",
       });
     }
+    if (isAttendanceExcluded(lesson.discipline)) {
+      return res.status(400).json({ message: "Physical education is excluded from attendance" });
+    }
 
     const attendances = await prisma.attendance.findMany({
       where: {
@@ -468,6 +521,7 @@ export async function getLessonAttendance(
             firstName: true,
             lastName: true,
             email: true,
+            groupId: true,
           },
         },
       },
@@ -495,24 +549,26 @@ export async function getLessonAttendance(
       },
     });
 
-    const attendedStudentIds = new Set(
-      attendances
-        .filter(
-          (attendance) =>
-            attendance.status === "PRESENT" ||
-            attendance.status === "LATE",
-        )
-        .map((attendance) => attendance.studentId),
+    const attendanceByStudent = new Map(
+      attendances.map((attendance) => [attendance.studentId, attendance]),
     );
-
-    const absentStudents = students.filter(
-      (student) => !attendedStudentIds.has(student.id),
+    const deadlinePassed = lesson.finishedAt !== null &&
+      lesson.endsAt.getTime() <= Date.now();
+    const unmarkedStudents = students.filter(
+      (student) => !attendanceByStudent.has(student.id),
     );
+    // Pending is never an absence. Rejected marks remain explicitly labelled.
+    const absentStudents = deadlinePassed ? unmarkedStudents : [];
 
     return res.json({
       lessonId: lesson.id,
-      attendances,
+      attendances: attendances.map((attendance) => ({
+        ...attendance,
+        isGuest: !participatingGroupIds.includes(attendance.student.groupId ?? -1),
+      })),
       absentStudents,
+      unmarkedStudents: deadlinePassed ? [] : unmarkedStudents,
+      attendanceFinalized: deadlinePassed,
     });
   } catch (error) {
     console.error(error);
@@ -580,7 +636,7 @@ export async function getSuspiciousAttendance(
     });
 
     return res.json({
-      attendances: suspiciousAttendances,
+      attendances: suspiciousAttendances.filter((item) => !isAttendanceExcluded(item.lesson.discipline)),
     });
   } catch (error) {
     console.error(error);
@@ -837,20 +893,22 @@ export async function getTeacherAttendanceStats(
         finishedAt: {
           not: null,
         },
-        endsAt: { lte: new Date() },
       },
       include: {
-        attendances: true,
+        attendances: { include: { student: { select: { groupId: true } } } },
         lessonGroups: { select: { groupId: true } },
+        guests: { select: { studentId: true } },
       },
     });
 
-    const totalLessons = lessons.length;
+    const trackedLessons = lessons.filter((lesson) => !isAttendanceExcluded(lesson.discipline));
+    const totalLessons = trackedLessons.length;
 
     let totalStudents = 0;
     let attendedStudents = 0;
+    let guestAttendedStudents = 0;
 
-    for (const lesson of lessons) {
+    for (const lesson of trackedLessons) {
       const students = await prisma.user.count({
         where: {
           role: "STUDENT",
@@ -860,11 +918,13 @@ export async function getTeacherAttendanceStats(
 
       totalStudents += students;
 
-      attendedStudents += lesson.attendances.filter(
-        (attendance) =>
-          attendance.status === "PRESENT" ||
-          attendance.status === "LATE",
-      ).length;
+      const counts = countConfirmedParticipants(
+        lesson.attendances,
+        [lesson.groupId, ...lesson.lessonGroups.map((g) => g.groupId)],
+        lesson.guests.map((guest) => guest.studentId),
+      );
+      attendedStudents += counts.attendedStudents;
+      guestAttendedStudents += counts.guestAttendedStudents;
     }
 
     const attendancePercentage =
@@ -876,6 +936,7 @@ export async function getTeacherAttendanceStats(
       totalLessons,
       totalStudents,
       attendedStudents,
+      guestAttendedStudents,
       attendancePercentage,
     });
   } catch (error) {
@@ -910,13 +971,13 @@ export async function getTeacherLessonStats(
         finishedAt: {
           not: null,
         },
-        endsAt: { lte: new Date() },
       },
       include: {
         group: true,
         classroom: true,
-        attendances: true,
+        attendances: { include: { student: { select: { groupId: true } } } },
         lessonGroups: { include: { group: true } },
+        guests: { select: { studentId: true } },
       },
       orderBy: {
         startsAt: "desc",
@@ -924,19 +985,52 @@ export async function getTeacherLessonStats(
     });
 
     const stats = await Promise.all(
-      lessons.map(async (lesson) => {
-        const totalStudents = await prisma.user.count({
-          where: {
-            role: "STUDENT",
-            groupId: { in: [lesson.groupId, ...lesson.lessonGroups.map((g) => g.groupId)] },
-          },
-        });
+      lessons.filter((lesson) => !isAttendanceExcluded(lesson.discipline)).map(async (lesson) => {
+        const participatingGroups = [
+          lesson.group,
+          ...lesson.lessonGroups.map((entry) => entry.group),
+        ];
+        // A shared lecture has one row per enrolled group. Guests stay outside all rows.
+        const deadlinePassed = lesson.endsAt.getTime() <= Date.now();
+        const groupStats = await Promise.all(participatingGroups.map(async (group) => {
+          const totalStudents = await prisma.user.count({
+            where: { role: "STUDENT", groupId: group.id },
+          });
+          const officialMarks = lesson.attendances.filter(
+            (attendance) => attendance.student.groupId === group.id,
+          );
+          const attendedStudents = officialMarks.filter(
+            (attendance) => attendance.status === "PRESENT" || attendance.status === "LATE",
+          ).length;
+          const pendingStudents = officialMarks.filter(
+            (attendance) => attendance.status === "PENDING",
+          ).length;
+          const rejectedStudents = officialMarks.filter(
+            (attendance) => attendance.status === "REJECTED",
+          ).length;
+          const unmarkedStudents = Math.max(0, totalStudents - officialMarks.length);
+          return {
+            groupId: group.id,
+            groupName: group.name,
+            totalStudents,
+            attendedStudents,
+            pendingStudents,
+            rejectedStudents,
+            unmarkedStudents: deadlinePassed ? 0 : unmarkedStudents,
+            missedStudents: deadlinePassed ? unmarkedStudents + rejectedStudents : 0,
+            attendancePercentage: totalStudents > 0
+              ? Number(((attendedStudents / totalStudents) * 100).toFixed(2))
+              : 0,
+          };
+        }));
 
-        const attendedStudents = lesson.attendances.filter(
-          (attendance) =>
-            attendance.status === "PRESENT" ||
-            attendance.status === "LATE",
-        ).length;
+        const totalStudents = groupStats.reduce((sum, group) => sum + group.totalStudents, 0);
+        const attendedStudents = groupStats.reduce((sum, group) => sum + group.attendedStudents, 0);
+        const { guestAttendedStudents } = countConfirmedParticipants(
+          lesson.attendances,
+          participatingGroups.map((group) => group.id),
+          lesson.guests.map((guest) => guest.studentId),
+        );
 
         const attendancePercentage =
           totalStudents > 0
@@ -950,11 +1044,14 @@ export async function getTeacherLessonStats(
           startsAt: lesson.startsAt,
           endsAt: lesson.endsAt,
           group: lesson.group,
-          groups: [lesson.group, ...lesson.lessonGroups.map((g) => g.group)],
+          groups: participatingGroups,
+          groupStats,
           classroom: lesson.classroom,
           totalStudents,
           attendedStudents,
+          guestAttendedStudents,
           attendancePercentage,
+          attendanceFinalized: deadlinePassed,
         };
       }),
     );
@@ -994,7 +1091,6 @@ export async function getTeacherGroupStats(
         finishedAt: {
           not: null,
         },
-        endsAt: { lte: new Date() },
       },
       include: {
         group: true,
@@ -1014,7 +1110,7 @@ export async function getTeacherGroupStats(
       }
     >();
 
-    for (const lesson of lessons) {
+    for (const lesson of lessons.filter((lesson) => !isAttendanceExcluded(lesson.discipline))) {
       for (const group of [lesson.group, ...lesson.lessonGroups.map((g) => g.group)]) {
         const totalStudents = await prisma.user.count({
           where: { role: "STUDENT", groupId: group.id },

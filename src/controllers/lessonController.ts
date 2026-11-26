@@ -3,6 +3,8 @@ import { prisma } from "../prisma.js";
 import type { AuthRequest } from "../middleware/authMiddleware.js";
 import { nanoid } from "nanoid";
 import { redisClient } from "../redis.js";
+import { isAttendanceExcluded } from "../utils/attendanceDisciplinePolicy.js";
+import { lessonOverlapsWindow } from "../utils/lessonTimeConflicts.js";
 
 export async function createLesson(req: AuthRequest, res: Response) {
   try {
@@ -24,6 +26,10 @@ export async function createLesson(req: AuthRequest, res: Response) {
       return res.status(400).json({
         message: "discipline is required",
       });
+    }
+
+    if (isAttendanceExcluded(discipline)) {
+      return res.status(400).json({ message: "Physical education is excluded from attendance tracking" });
     }
 
     // Проверяем существование дисциплины в базе
@@ -153,11 +159,10 @@ export async function createLesson(req: AuthRequest, res: Response) {
     }
 
 
-    // Проверяем пересечения занятий по времени
+    // A teacher's explicit early finish frees room, groups, and teacher immediately.
     const conflictingLesson = await prisma.lesson.findFirst({
       where: {
-        startsAt: { lt: end },
-        endsAt: { gt: start },
+        ...lessonOverlapsWindow(start, end),
         OR: [
           { classroomId: normalizedClassroomId },
           { groupId: { in: participatingGroupIds } },
@@ -275,6 +280,13 @@ export async function finishLesson(req: AuthRequest, res: Response) {
       });
     }
 
+    // Early finish counts immediately. Do not allow marking a future lesson finished.
+    if (lesson.startsAt.getTime() > Date.now()) {
+      return res.status(409).json({
+        message: "Lesson has not started yet",
+      });
+    }
+
     const updatedLesson = await prisma.lesson.update({
       where: {
         id: lessonId,
@@ -344,6 +356,10 @@ export async function generateLessonQr(
       return res.status(400).json({
         message: "Lesson is already finished",
       });
+    }
+
+    if (isAttendanceExcluded(lesson.discipline)) {
+      return res.status(400).json({ message: "Physical education has no QR attendance" });
     }
 
     const qrToken = nanoid(32);
@@ -490,7 +506,7 @@ export async function getTeacherLessons(
     });
 
     return res.json({
-      lessons,
+      lessons: lessons.filter((lesson) => !isAttendanceExcluded(lesson.discipline)),
     });
   } catch (error) {
     console.error(error);

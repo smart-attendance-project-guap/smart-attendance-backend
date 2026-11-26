@@ -7,6 +7,7 @@ import { prisma } from "../src/prisma.js";
 import { redisClient, connectRedis } from "../src/redis.js";
 import { generateToken } from "../src/utils/jwt.js";
 import lessonRoutes from "../src/routes/lessonRoutes.js";
+import lessonGuestRoutes from "../src/routes/lessonGuestRoutes.js";
 import attendanceRoutes from "../src/routes/attendanceRoutes.js";
 
 // Only this isolated smoke test needs local WebAuthn defaults.
@@ -16,6 +17,7 @@ process.env.WEBAUTHN_RP_ID ||= "localhost";
 
 const app = express();
 app.use(express.json());
+app.use("/api/lessons", lessonGuestRoutes);
 app.use("/api/lessons", lessonRoutes);
 app.use("/api/attendance", attendanceRoutes);
 const server = createServer(app);
@@ -115,6 +117,10 @@ async function main() {
   assert(created.status === 201 && Number.isInteger(created.body.lesson?.id),
     `Shared lesson creation failed: ${created.status} ${JSON.stringify(created.body)}`);
   lessonId = created.body.lesson.id;
+
+  const prematureFinish = await request("PATCH", `/api/lessons/${lessonId}/finish`, teacher.token);
+  assert(prematureFinish.status === 409,
+    "Finishing before scheduled startsAt must be denied");
 
   const members = await prisma.lessonGroup.findMany({
     where: { lessonId },
@@ -354,13 +360,85 @@ async function main() {
     ownLessonHistory.lesson.group?.name === "4515",
     "Student history leaked QR secrets or lost non-sensitive lesson metadata");
 
-  // A teacher may finish early, but statistics must wait until endsAt.
+  // Invite the 4516 student explicitly: guest attendance is separate from 4514/4515 totals.
+  const guestUser = await prisma.user.findUnique({
+    where: { id: third.id }, select: { email: true },
+  });
+  assert(guestUser?.email, "Guest user missing");
+  const invitation = await request(
+    "POST", `/api/lessons/${lessonId}/guests`, teacher.token,
+    { studentEmail: guestUser.email },
+  );
+  assert(invitation.status === 200 && invitation.body.allowed === true,
+    "Teacher could not authorize a student from group 4516");
+
+  const guestQr = await request("POST", `/api/lessons/${lessonId}/qr`, teacher.token);
+  assert(guestQr.status === 200, "Guest QR could not be refreshed");
+  const guestMark = await request(
+    "POST", markPath, third.token, { qrToken: guestQr.body.qrToken },
+  );
+  assert(guestMark.status === 201 && guestMark.body.attendance?.status === "PENDING",
+    "Invited guest could not create a pending mark");
+
+  const guestAttendanceList = await request(
+    "GET", `/api/attendance/lesson/${lessonId}`, teacher.token,
+  );
+  const guestRow = guestAttendanceList.body.attendances?.find(
+    (row: any) => row.studentId === third.id,
+  );
+  assert(guestAttendanceList.status === 200 && guestRow?.isGuest === true &&
+    guestAttendanceList.body.absentStudents.every((student: any) => student.id !== third.id),
+    "Teacher must see the guest separately from enrolled group members");
+
+  // The main shared-lecture test uses real reference groups (4514/4515).
+  // Do not test booking conflicts here: another legitimate lecture of either
+  // group can overlap, producing HTTP 409 for an unrelated lesson.
+  // A separate isolated fixture below tests the actual early-finish rule.
   const finished = await request("PATCH", `/api/lessons/${lessonId}/finish`, teacher.token);
-  assert(finished.status === 200, "Teacher could not finish the temporary lesson");
+  assert(finished.status === 200 && finished.body.lesson?.finishedAt,
+    "Teacher could not finish the temporary lesson");
 
   const earlyStats = await request("GET", "/api/attendance/teacher/stats", teacher.token);
-  assert(earlyStats.status === 200 && earlyStats.body.totalLessons === 0,
-    "A prematurely finished lesson must not enter final statistics");
+  assert(earlyStats.status === 200 &&
+    earlyStats.body.totalLessons === 1 &&
+    earlyStats.body.attendedStudents === 0,
+    "Early finish must count immediately, but PENDING is not yet approved");
+
+  const earlyStudentStats = await request("GET", "/api/attendance/stats", second.token);
+  assert(earlyStudentStats.status === 200 &&
+    earlyStudentStats.body.totalLessons === 1 &&
+    earlyStudentStats.body.attendedLessons === 0 &&
+    earlyStudentStats.body.missedLessons === 0 &&
+    earlyStudentStats.body.pendingLessons === 1,
+    "Early-finished PENDING lesson must not be a missed lesson before planned end");
+
+  const closedQr = await request("POST", `/api/lessons/${lessonId}/qr`, teacher.token);
+  assert(closedQr.status === 400, "QR must stay closed after early finish");
+
+  const approvedGuest = await request(
+    "PATCH", `/api/attendance/${guestMark.body.attendance.id}/approve`, teacher.token,
+  );
+  assert(approvedGuest.status === 200 &&
+    ["PRESENT", "LATE"].includes(approvedGuest.body.attendance?.status),
+    "Guest pending mark must still be approvable after lesson finish");
+
+  const guestOnlyStats = await request("GET", "/api/attendance/teacher/stats", teacher.token);
+  const guestOnlyLessons = await request("GET", "/api/attendance/teacher/lessons/stats", teacher.token);
+  const guestOnlyLesson = guestOnlyLessons.body.stats?.find(
+    (row: any) => row.lessonId === lessonId,
+  );
+  assert(guestOnlyStats.status === 200 &&
+    guestOnlyStats.body.attendedStudents === 0 &&
+    guestOnlyStats.body.guestAttendedStudents === 1 &&
+    guestOnlyStats.body.attendancePercentage === 0 &&
+    guestOnlyLessons.status === 200 &&
+    guestOnlyLesson?.attendedStudents === 0 &&
+    guestOnlyLesson?.guestAttendedStudents === 1 &&
+    guestOnlyLesson?.attendancePercentage === 0 &&
+    guestOnlyLesson?.groupStats?.length === 2 &&
+    guestOnlyLesson.groupStats.every((group: any) => group.attendedStudents === 0 && group.attendancePercentage === 0),
+    "Guest-only attendance must show 0% for every official group, not a false positive rate");
+  console.log("PASS: guest-only presence yields 0% group attendance, 1 guest present");
 
   const approved = await request(
     "PATCH", `/api/attendance/${a.body.attendance.id}/approve`, teacher.token,
@@ -375,17 +453,54 @@ async function main() {
   assert(rejected.status === 200 && rejected.body.attendance?.status === "REJECTED",
     "Teacher could not reject group 4515 attendance");
 
-  // Advance only this temporary lesson beyond endsAt for final-stats checks.
-  await prisma.lesson.update({
-    where: { id: lessonId },
-    data: { endsAt: new Date(Date.now() - 1000) },
-  });
-
   const teacherStats = await request("GET", "/api/attendance/teacher/stats", teacher.token);
   assert(teacherStats.status === 200 &&
     teacherStats.body.totalLessons === 1 &&
     teacherStats.body.attendedStudents === 1,
     "Teacher summary must count exactly one approved mark in the shared lecture");
+
+  const statsWithGuest = await request("GET", "/api/attendance/teacher/stats", teacher.token);
+  const lessonStatsWithGuest = await request(
+    "GET", "/api/attendance/teacher/lessons/stats", teacher.token,
+  );
+  const sharedStats = lessonStatsWithGuest.body.stats?.find(
+    (row: any) => row.lessonId === lessonId,
+  );
+  assert(statsWithGuest.status === 200 &&
+    statsWithGuest.body.attendedStudents === 1 &&
+    statsWithGuest.body.guestAttendedStudents === 1 &&
+    statsWithGuest.body.attendancePercentage ===
+      Number((100 / statsWithGuest.body.totalStudents).toFixed(2)) &&
+    lessonStatsWithGuest.status === 200 &&
+    sharedStats?.attendedStudents === 1 &&
+    sharedStats?.guestAttendedStudents === 1 &&
+    sharedStats?.attendancePercentage ===
+      Number((100 / sharedStats.totalStudents).toFixed(2)),
+    "Guest attendance must not inflate official group percentages");
+
+  const perGroup = new Map<number, any>(
+    (sharedStats?.groupStats ?? []).map((row: any) => [row.groupId, row]),
+  );
+  const firstGroup = perGroup.get(g1);
+  const secondGroup = perGroup.get(g2);
+  const firstGroupSize = await prisma.user.count({ where: { role: "STUDENT", groupId: g1 } });
+  const secondGroupSize = await prisma.user.count({ where: { role: "STUDENT", groupId: g2 } });
+  assert(perGroup.size === 2 &&
+    sharedStats.groupStats.length === 2 &&
+    firstGroup?.groupName === "4514" &&
+    secondGroup?.groupName === "4515" &&
+    firstGroup.totalStudents === firstGroupSize &&
+    secondGroup.totalStudents === secondGroupSize &&
+    firstGroup.attendedStudents === 1 &&
+    secondGroup.attendedStudents === 0 &&
+    firstGroup.attendancePercentage === Number((100 / firstGroupSize).toFixed(2)) &&
+    secondGroup.attendancePercentage === 0 &&
+    firstGroup.totalStudents + secondGroup.totalStudents === sharedStats.totalStudents &&
+    firstGroup.attendedStudents + secondGroup.attendedStudents === sharedStats.attendedStudents &&
+    sharedStats.guestAttendedStudents === 1,
+    "Shared lecture groupStats must split 4514 and 4515 and exclude invited guest 4516");
+  console.log("PASS: lesson groupStats accurately splits participating groups and excludes guests");
+  console.log("PASS: authorized guest counted separately, not in group percentage");
 
   const groupStats = await request("GET", "/api/attendance/teacher/groups/stats", teacher.token);
   const byGroup = new Map<string, any>(
@@ -395,8 +510,9 @@ async function main() {
     byGroup.get("4514")?.totalLessons === 1 &&
     byGroup.get("4514")?.attendedStudents === 1 &&
     byGroup.get("4515")?.totalLessons === 1 &&
-    byGroup.get("4515")?.attendedStudents === 0,
-    "Shared lecture teacher stats must be split correctly by group");
+    byGroup.get("4515")?.attendedStudents === 0 &&
+    !byGroup.has("4516"),
+    "Shared lecture teacher stats must exclude the invited guest's home group");
 
   const studentStats = await request("GET", "/api/attendance/stats", second.token);
   assert(studentStats.status === 200 &&
@@ -404,11 +520,15 @@ async function main() {
     studentStats.body.attendedLessons === 0,
     "Group 4515 rejected mark must appear in its own student statistics");
 
+  // This fixture uses unique group/classroom/teacher resources and cannot
+  // collide with pre-existing student lessons in the test database.
+  await verifyIsolatedEarlyFinishRebooking(discipline.name);
+
   console.log("PASS: four-group limit includes primary group");
   console.log("PASS: duplicate scan does not create an extra mark");
   console.log("PASS: group 4515 attendance history displays 4515");
   console.log("PASS: student attendance history never exposes active QR secrets");
-  console.log("PASS: early finish excluded until scheduled end");
+  console.log("PASS: early finish immediately counts in stats, QR closed, PENDING review remains possible");
   console.log("PASS: teacher approval/rejection and per-group stats");
   console.log("PASS: group 4515 sees its rejection in student stats");
 
@@ -429,6 +549,126 @@ async function main() {
   console.log("PASS: teacher lesson lists and student attendance history are isolated");
   console.log("PASS: client cannot forge device verification or alter approval state");
   console.log("Temporary data cleanup starts automatically.");
+}
+
+/**
+ * A booking-conflict regression MUST NOT depend on university reference groups:
+ * their other legitimate scheduled lessons may already occupy the same interval.
+ * Create private resources, exercise the real HTTP endpoints, and remove only
+ * those private records even when one assertion fails.
+ */
+async function verifyIsolatedEarlyFinishRebooking(discipline: string): Promise<void> {
+  const marker = randomUUID();
+  let originalId: number | undefined;
+  let followupId: number | undefined;
+  let isolatedGroupId: number | undefined;
+  let isolatedClassroomId: number | undefined;
+  let isolatedTeacherId: number | undefined;
+
+  try {
+    const group = await prisma.group.create({
+      data: { name: `SMOKE-BOOKING-${marker}` },
+      select: { id: true },
+    });
+    isolatedGroupId = group.id;
+    const room = await prisma.classroom.create({
+      data: {
+        name: `SMOKE-BOOKING-${marker}`,
+        latitude: 59.929561,
+        longitude: 30.296671,
+      },
+      select: { id: true },
+    });
+    isolatedClassroomId = room.id;
+    const teacher = await prisma.user.create({
+      data: {
+        email: `smoke-booking-${marker}@example.invalid`,
+        password: "no-login-smoke-only",
+        firstName: "Smoke",
+        lastName: "Booking",
+        role: "TEACHER",
+      },
+      select: { id: true },
+    });
+    isolatedTeacherId = teacher.id;
+    const token = generateToken(teacher.id, "TEACHER");
+    const start = Date.now();
+    const plannedEnd = new Date(start + 25 * 60_000);
+    const original = await request("POST", "/api/lessons", token, {
+      discipline,
+      groupId: group.id,
+      classroomId: room.id,
+      startsAt: new Date(start - 60_000).toISOString(),
+      endsAt: plannedEnd.toISOString(),
+    });
+    assert(original.status === 201 && Number.isInteger(original.body.lesson?.id),
+      `Isolated original lecture creation failed: ${original.status} ${JSON.stringify(original.body)}`);
+    originalId = original.body.lesson.id;
+
+    const nextStart = new Date(start + 3 * 60_000);
+    const nextEnd = new Date(start + 15 * 60_000);
+    const nextLesson = {
+      discipline,
+      groupId: group.id,
+      classroomId: room.id,
+      startsAt: nextStart.toISOString(),
+      endsAt: nextEnd.toISOString(),
+    };
+
+    const blockedWhileActive = await request("POST", "/api/lessons", token, nextLesson);
+    assert(blockedWhileActive.status === 409,
+      "Active lecture must block another booking of its room, group and teacher");
+
+    const finish = await request("PATCH", `/api/lessons/${originalId}/finish`, token);
+    assert(finish.status === 200 && finish.body.lesson?.finishedAt,
+      "Could not finish the isolated lecture before the scheduled end");
+    const actuallyFinishedAt = new Date(finish.body.lesson.finishedAt).getTime();
+    assert(actuallyFinishedAt < nextStart.getTime() &&
+      actuallyFinishedAt < plannedEnd.getTime(),
+      "Test setup did not represent an early finish before the next booking");
+
+    const blockedBeforeActualFinish = await request("POST", "/api/lessons", token, {
+      ...nextLesson,
+      startsAt: new Date(actuallyFinishedAt - 30_000).toISOString(),
+    });
+    assert(blockedBeforeActualFinish.status === 409,
+      "A class must still block bookings beginning before its actual finish");
+
+    const allowed = await request("POST", "/api/lessons", token, nextLesson);
+    assert(allowed.status === 201 && Number.isInteger(allowed.body.lesson?.id),
+      `Early-finished class still blocked private resources: ${allowed.status} ${JSON.stringify(allowed.body)}`);
+    followupId = allowed.body.lesson.id;
+
+    const persistedOriginal = await prisma.lesson.findUnique({
+      where: { id: originalId },
+      select: { startsAt: true, endsAt: true, finishedAt: true },
+    });
+    assert(persistedOriginal?.finishedAt &&
+      persistedOriginal.endsAt.getTime() === plannedEnd.getTime() &&
+      persistedOriginal.startsAt.getTime() < persistedOriginal.finishedAt.getTime(),
+      "The original lecture schedule and finish timestamp must be preserved");
+
+    console.log("PASS: early finish frees teacher, groups and classroom before scheduled endsAt");
+    console.log("PASS: actual pre-finish overlap still rejected and unfinished lesson still blocks");
+  } finally {
+    if (followupId !== undefined) {
+      await prisma.attendance.deleteMany({ where: { lessonId: followupId } });
+      await prisma.lesson.delete({ where: { id: followupId } });
+    }
+    if (originalId !== undefined) {
+      await prisma.attendance.deleteMany({ where: { lessonId: originalId } });
+      await prisma.lesson.delete({ where: { id: originalId } });
+    }
+    if (isolatedTeacherId !== undefined) {
+      await prisma.user.delete({ where: { id: isolatedTeacherId } });
+    }
+    if (isolatedClassroomId !== undefined) {
+      await prisma.classroom.delete({ where: { id: isolatedClassroomId } });
+    }
+    if (isolatedGroupId !== undefined) {
+      await prisma.group.delete({ where: { id: isolatedGroupId } });
+    }
+  }
 }
 
 async function cleanup() {
