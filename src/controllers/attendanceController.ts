@@ -5,6 +5,7 @@ import { broadcast } from "../websocket.js";
 import type { AuthRequest } from "../middleware/authMiddleware.js";
 import { Prisma } from "../generated/prisma/client.js";
 import { enqueueAttendanceDecisionNotification } from "../services/telegramNotifications.js";
+import { isAttendanceExcluded } from "../utils/attendanceDisciplinePolicy.js";
 
 export async function markAttendance(req: AuthRequest, res: Response) {
   try {
@@ -55,6 +56,10 @@ export async function markAttendance(req: AuthRequest, res: Response) {
       return res.status(400).json({
         message: "Lesson is already finished",
       });
+    }
+
+    if (isAttendanceExcluded(lesson.discipline)) {
+      return res.status(400).json({ message: "Physical education does not use QR attendance" });
     }
 
     // Разрешаем отметку только во время занятия
@@ -248,7 +253,7 @@ export async function getMissedLessons(
     });
 
     return res.status(200).json({
-      missedLessons: missedLessons.map((lesson) => ({
+      missedLessons: missedLessons.filter((lesson) => !isAttendanceExcluded(lesson.discipline)).map((lesson) => ({
         ...lesson,
         group: student.group ?? lesson.group,
       })),
@@ -298,7 +303,7 @@ export async function getAttendanceHistory(
     });
 
     return res.json({
-      attendances: attendances.map(({ student, ...attendance }) => {
+      attendances: attendances.filter((item) => !isAttendanceExcluded(item.lesson.discipline)).map(({ student, ...attendance }) => {
         // QR tokens remain short-lived secrets. Never expose them via the
         // student's attendance history, even after the student marks a class.
         const { qrToken: _qrToken, qrExpiresAt: _qrExpiresAt, ...lesson } =
@@ -374,9 +379,10 @@ export async function getAttendanceStats(
       },
     });
 
-    const totalLessons = lessons.length;
+    const trackedLessons = lessons.filter((lesson) => !isAttendanceExcluded(lesson.discipline));
+    const totalLessons = trackedLessons.length;
 
-    const attendedLessons = lessons.filter((lesson) => {
+    const attendedLessons = trackedLessons.filter((lesson) => {
       const attendance = lesson.attendances[0];
 
       return (
@@ -386,7 +392,7 @@ export async function getAttendanceStats(
       );
     }).length;
 
-    const rejectedLessons = lessons.filter((lesson) => {
+    const rejectedLessons = trackedLessons.filter((lesson) => {
       const attendance = lesson.attendances[0];
 
       return attendance?.status === "REJECTED";
@@ -456,6 +462,9 @@ export async function getLessonAttendance(
       return res.status(403).json({
         message: "You can only view attendance for your own lessons",
       });
+    }
+    if (isAttendanceExcluded(lesson.discipline)) {
+      return res.status(400).json({ message: "Physical education is excluded from attendance" });
     }
 
     const attendances = await prisma.attendance.findMany({
@@ -581,7 +590,7 @@ export async function getSuspiciousAttendance(
     });
 
     return res.json({
-      attendances: suspiciousAttendances,
+      attendances: suspiciousAttendances.filter((item) => !isAttendanceExcluded(item.lesson.discipline)),
     });
   } catch (error) {
     console.error(error);
@@ -846,12 +855,13 @@ export async function getTeacherAttendanceStats(
       },
     });
 
-    const totalLessons = lessons.length;
+    const trackedLessons = lessons.filter((lesson) => !isAttendanceExcluded(lesson.discipline));
+    const totalLessons = trackedLessons.length;
 
     let totalStudents = 0;
     let attendedStudents = 0;
 
-    for (const lesson of lessons) {
+    for (const lesson of trackedLessons) {
       const students = await prisma.user.count({
         where: {
           role: "STUDENT",
@@ -925,7 +935,7 @@ export async function getTeacherLessonStats(
     });
 
     const stats = await Promise.all(
-      lessons.map(async (lesson) => {
+      lessons.filter((lesson) => !isAttendanceExcluded(lesson.discipline)).map(async (lesson) => {
         const totalStudents = await prisma.user.count({
           where: {
             role: "STUDENT",
@@ -1015,7 +1025,7 @@ export async function getTeacherGroupStats(
       }
     >();
 
-    for (const lesson of lessons) {
+    for (const lesson of lessons.filter((lesson) => !isAttendanceExcluded(lesson.discipline))) {
       for (const group of [lesson.group, ...lesson.lessonGroups.map((g) => g.group)]) {
         const totalStudents = await prisma.user.count({
           where: { role: "STUDENT", groupId: group.id },
