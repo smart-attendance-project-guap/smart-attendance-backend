@@ -10,11 +10,15 @@ const allowedDatabase = "/smart_attendance";
 async function main() {
   const configuredUrl = process.env.DATABASE_URL;
   if (!configuredUrl) throw new Error("DATABASE_URL is missing");
-  const database = new URL(configuredUrl).pathname;
-  if (database !== allowedDatabase || process.env.CONFIRM_SHARED_DEMO !== teacherEmail) {
+  const url = new URL(configuredUrl);
+  const database = url.pathname;
+  if (database !== allowedDatabase ||
+      !["localhost", "127.0.0.1"].includes(url.hostname) ||
+      process.env.CONFIRM_SHARED_DEMO !== teacherEmail) {
     throw new Error(
       "STOP: this script requires the local smart_attendance DB and " +
-      "CONFIRM_SHARED_DEMO=teacher@example.com. Current DB: " + database,
+      "CONFIRM_SHARED_DEMO=teacher@example.com. Current DB: " + database +
+      ", host: " + url.hostname,
     );
   }
 
