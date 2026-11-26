@@ -116,6 +116,10 @@ async function main() {
     `Shared lesson creation failed: ${created.status} ${JSON.stringify(created.body)}`);
   lessonId = created.body.lesson.id;
 
+  const prematureFinish = await request("PATCH", `/api/lessons/${lessonId}/finish`, teacher.token);
+  assert(prematureFinish.status === 409,
+    "Finishing before scheduled startsAt must be denied");
+
   const members = await prisma.lessonGroup.findMany({
     where: { lessonId },
     select: { groupId: true },
