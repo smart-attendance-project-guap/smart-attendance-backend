@@ -61,6 +61,7 @@ async function main() {
   const a = await createUser("STUDENT", "Alpha", group4515.id);
   const b = await createUser("STUDENT", "Beta", group4515.id);
   const guest = await createUser("STUDENT", "Guest", group4514.id);
+  const gamma = await createUser("STUDENT", "Gamma", group4514.id);
 
   const room = await prisma.classroom.create({
     data: { name: classroomName, latitude: 59.929561, longitude: 30.296671 },
@@ -172,6 +173,65 @@ async function main() {
     "Early-finished lesson must immediately count as missed in Excel totals");
   console.log("PASS: early finish counts in Excel, while outside-group guest is excluded");
 
+  // A shared 4515 + 4514 lecture must produce a separate, correct Excel
+  // report for each group, even when both groups attended the same lesson.
+  const sharedStart = new Date(now - 2 * days);
+  const sharedEnd = new Date(sharedStart.getTime() + 90 * 60_000);
+  const shared = await prisma.lesson.create({
+    data: {
+      teacherId: teacher.id,
+      groupId: group4515.id,
+      classroomId: room.id,
+      discipline: excelDiscipline,
+      startsAt: sharedStart,
+      endsAt: sharedEnd,
+      finishedAt: sharedEnd,
+      lessonGroups: { create: { groupId: group4514.id } },
+    },
+  });
+  lessonIds.push(shared.id);
+  await prisma.attendance.createMany({
+    data: [
+      { lessonId: shared.id, studentId: a.id, status: "PRESENT" },
+      { lessonId: shared.id, studentId: gamma.id, status: "LATE" },
+    ],
+  });
+  const for4514 = new URLSearchParams(query);
+  for4514.set("groupId", String(group4514.id));
+  const group4514Download = await fetch(
+    `${origin}/api/attendance/teacher/export?${for4514}`,
+    { headers: { Authorization: `Bearer ${teacherToken}` } },
+  );
+  check(group4514Download.status === 200, "Shared lesson group 4514 Excel not available");
+  const book4514 = new ExcelJS.Workbook();
+  await book4514.xlsx.load(Buffer.from(await group4514Download.arrayBuffer()));
+  const sheet4514 = book4514.getWorksheet("Посещаемость");
+  check(sheet4514, "Group 4514 Excel sheet missing");
+  const cells4514 = Array.from({ length: sheet4514.rowCount - 5 }, (_, i) =>
+    sheet4514.getRow(i + 6));
+  const gammaRow = cells4514.find((row) => row.getCell(1).text === `SMOKE${tag} Gamma`);
+  const guestRow = cells4514.find((row) => row.getCell(1).text === `SMOKE${tag} Guest`);
+  check(gammaRow?.getCell(2).text === "Опоздал" &&
+    gammaRow.getCell(3).value === 1 && gammaRow.getCell(4).value === 0 &&
+    guestRow?.getCell(2).text === "Пропуск" &&
+    !cells4514.some((row) => row.getCell(1).text === `SMOKE${tag} Alpha`),
+    "Group 4514 report must include only 4514 students and their group marks");
+
+  const group4515Download = await fetch(exportUrl, {
+    headers: { Authorization: `Bearer ${teacherToken}` },
+  });
+  check(group4515Download.status === 200, "Shared lesson group 4515 Excel not available");
+  const book4515 = new ExcelJS.Workbook();
+  await book4515.xlsx.load(Buffer.from(await group4515Download.arrayBuffer()));
+  const sheet4515 = book4515.getWorksheet("Посещаемость");
+  check(sheet4515, "Group 4515 Excel sheet missing");
+  const cells4515 = Array.from({ length: sheet4515.rowCount - 5 }, (_, i) =>
+    sheet4515.getRow(i + 6));
+  const alphaSharedRow = cells4515.find((row) => row.getCell(1).text === `SMOKE${tag} Alpha`);
+  check(alphaSharedRow && alphaSharedRow.getCell(7).value === 3 &&
+    !cells4515.some((row) => row.getCell(1).text === `SMOKE${tag} Gamma`),
+    "Group 4515 report must include only 4515 students and their group marks");
+  console.log("PASS: shared lesson Excel separates 4514 and 4515 without cross-group marks");
 
   const studentExport = await fetch(exportUrl, { headers: { Authorization: `Bearer ${studentToken}` } });
   check(studentExport.status === 403, `Student Excel access should be 403, got ${studentExport.status}`);
