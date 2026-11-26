@@ -187,7 +187,7 @@ model ScheduleEntry {
   teacherId   Int?
   teacher     User? @relation("ScheduleTeacher", fields: [teacherId], references: [id])
   sharedKey   String?
-  launchedLessons Lesson[]
+  launchedLesson Lesson?
   id          Int      @id @default(autoincrement())
   groupId     Int
   group       Group    @relation(fields: [groupId], references: [id])
