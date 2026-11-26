@@ -969,16 +969,36 @@ export async function getTeacherLessonStats(
 
     const stats = await Promise.all(
       lessons.filter((lesson) => !isAttendanceExcluded(lesson.discipline)).map(async (lesson) => {
-        const totalStudents = await prisma.user.count({
-          where: {
-            role: "STUDENT",
-            groupId: { in: [lesson.groupId, ...lesson.lessonGroups.map((g) => g.groupId)] },
-          },
-        });
+        const participatingGroups = [
+          lesson.group,
+          ...lesson.lessonGroups.map((entry) => entry.group),
+        ];
+        // A shared lecture has one row per enrolled group. Guests stay outside all rows.
+        const groupStats = await Promise.all(participatingGroups.map(async (group) => {
+          const totalStudents = await prisma.user.count({
+            where: { role: "STUDENT", groupId: group.id },
+          });
+          const attendedStudents = lesson.attendances.filter(
+            (attendance) =>
+              attendance.student.groupId === group.id &&
+              (attendance.status === "PRESENT" || attendance.status === "LATE"),
+          ).length;
+          return {
+            groupId: group.id,
+            groupName: group.name,
+            totalStudents,
+            attendedStudents,
+            attendancePercentage: totalStudents > 0
+              ? Number(((attendedStudents / totalStudents) * 100).toFixed(2))
+              : 0,
+          };
+        }));
 
-        const { attendedStudents, guestAttendedStudents } = countConfirmedParticipants(
+        const totalStudents = groupStats.reduce((sum, group) => sum + group.totalStudents, 0);
+        const attendedStudents = groupStats.reduce((sum, group) => sum + group.attendedStudents, 0);
+        const { guestAttendedStudents } = countConfirmedParticipants(
           lesson.attendances,
-          [lesson.groupId, ...lesson.lessonGroups.map((g) => g.groupId)],
+          participatingGroups.map((group) => group.id),
           lesson.guests.map((guest) => guest.studentId),
         );
 
@@ -994,7 +1014,8 @@ export async function getTeacherLessonStats(
           startsAt: lesson.startsAt,
           endsAt: lesson.endsAt,
           group: lesson.group,
-          groups: [lesson.group, ...lesson.lessonGroups.map((g) => g.group)],
+          groups: participatingGroups,
+          groupStats,
           classroom: lesson.classroom,
           totalStudents,
           attendedStudents,
