@@ -136,6 +136,35 @@ async function main() {
   check(alphaRow.getCell(2).text === "Присутствовал" && alphaRow.getCell(3).text === "Опоздал" && alphaRow.getCell(4).text === "Пропуск", "Wrong Alpha status labels");
   check(betaRow.getCell(2).text === "Отклонено" && betaRow.getCell(3).text === "Ожидает проверки" && betaRow.getCell(4).text === "Пропуск", "Wrong Beta status labels");
   console.log("PASS: Excel totals and statuses: Alpha 2/1, Beta 0/3");
+  // Early finish immediately changes the Excel denominator, even before endsAt.
+  const earlyLesson = await prisma.lesson.create({
+    data: {
+      teacherId: teacher.id,
+      groupId: group4515.id,
+      classroomId: room.id,
+      discipline: excelDiscipline,
+      startsAt: new Date(now - 20 * 60_000),
+      endsAt: new Date(now + 70 * 60_000),
+      finishedAt: new Date(now - 60_000),
+    },
+  });
+  lessonIds.push(earlyLesson.id);
+  const earlyDownload = await fetch(exportUrl, {
+    headers: { Authorization: `Bearer ${teacherToken}` },
+  });
+  check(earlyDownload.status === 200, `Early-finish Excel HTTP ${earlyDownload.status}`);
+  const earlyBook = new ExcelJS.Workbook();
+  await earlyBook.xlsx.load(Buffer.from(await earlyDownload.arrayBuffer()));
+  const earlySheet = earlyBook.getWorksheet("Посещаемость");
+  check(earlySheet, "Early-finish Excel worksheet missing");
+  const earlyAlpha = earlySheet.getRow(alphaRow.number);
+  const earlyBeta = earlySheet.getRow(betaRow.number);
+  check(earlyAlpha.getCell(5).text === "Пропуск" &&
+    earlyAlpha.getCell(6).value === 2 && earlyAlpha.getCell(7).value === 2 &&
+    earlyBeta.getCell(6).value === 0 && earlyBeta.getCell(7).value === 4,
+    "Early-finished lesson must immediately count as missed in Excel totals");
+  console.log("PASS: early finish is counted in Excel before scheduled endsAt");
+
 
   const studentExport = await fetch(exportUrl, { headers: { Authorization: `Bearer ${studentToken}` } });
   check(studentExport.status === 403, `Student Excel access should be 403, got ${studentExport.status}`);
