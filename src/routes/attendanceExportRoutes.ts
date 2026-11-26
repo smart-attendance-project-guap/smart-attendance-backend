@@ -116,7 +116,7 @@ router.get("/teacher/export", authMiddleware, async (req: AuthRequest, res: Resp
       let missed = 0;
       const values = lessons.map((lesson) => {
         const record = lesson.attendances.find((entry) => entry.studentId === student.id);
-        const completed = Boolean(lesson.finishedAt && lesson.endsAt.getTime() <= now);
+        const completed = lesson.finishedAt !== null;
         const present = record?.status === "PRESENT" || record?.status === "LATE";
         if (completed) {
           if (present) attended++;
