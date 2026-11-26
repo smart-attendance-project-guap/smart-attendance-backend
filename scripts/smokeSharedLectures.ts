@@ -429,8 +429,10 @@ async function main() {
     guestOnlyLessons.status === 200 &&
     guestOnlyLesson?.attendedStudents === 0 &&
     guestOnlyLesson?.guestAttendedStudents === 1 &&
-    guestOnlyLesson?.attendancePercentage === 0,
-    "Guest-only attendance must show 0% for official groups, not a false positive rate");
+    guestOnlyLesson?.attendancePercentage === 0 &&
+    guestOnlyLesson?.groupStats?.length === 2 &&
+    guestOnlyLesson.groupStats.every((group: any) => group.attendedStudents === 0 && group.attendancePercentage === 0),
+    "Guest-only attendance must show 0% for every official group, not a false positive rate");
   console.log("PASS: guest-only presence yields 0% group attendance, 1 guest present");
 
   const approved = await request(
