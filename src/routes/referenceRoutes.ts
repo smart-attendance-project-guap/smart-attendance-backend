@@ -2,6 +2,7 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { authMiddleware } from "../middleware/authMiddleware.js";
+import { isAttendanceExcluded } from "../utils/attendanceDisciplinePolicy.js";
 
 const router = Router();
 
@@ -114,7 +115,7 @@ router.get("/disciplines", authMiddleware, async (_req, res) => {
       orderBy: { name: "asc" },
     });
 
-    return res.status(200).json({ disciplines });
+    return res.status(200).json({ disciplines: disciplines.filter((item) => !isAttendanceExcluded(item.name)) });
   } catch (error) {
     console.error(error);
     return res.status(500).json({
