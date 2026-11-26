@@ -18,12 +18,14 @@ REJECTED are distinguished, but counted as not attended on completed lessons.
 
 ## Prepared schedule already in repository
 
-The reviewed source schedule is `data/schedule-4514-4517.json` (176 group-specific rows).
-The **import-compatible draft** is `data/schedule-4514-4517.import-ready.json`
-(118 items, representing exactly the same 176 group-specific rows).
-It consolidates 22 same-time / same-room / same-discipline / same-teacher
-multi-group entries into `groups` arrays. These are **candidate shared classes**
-that should be checked against the GUAP original timetable before final rollout.
+The preserved source timetable `data/schedule-4514-4517.json` has 176
+group-specific rows including 16 rows of physical education.
+**Physical education is excluded from Smart Attendance's lesson and QR workflow.**
+The operational import file `data/schedule-4514-4517.import-ready.json`
+has **106 items expanding to 160 non-PE rows**, including **18 shared-group
+entries**. The 12 PE import objects (16 group-specific rows) are deliberately
+omitted. The six types of original shared lessons were audited in
+`docs/schedule-shared-lecture-audit.md`; the active file has five types.
 
 Existing classroom labels, including building suffixes such as
 `52-17 (Б. Морская 67)`, were preserved intentionally: the import
@@ -31,13 +33,12 @@ Existing classroom labels, including building suffixes such as
 resolves the building suffix to the actual `Classroom` record.
 
 **Teacher account mapping is not complete:** the source contains names but
-no account emails. 15 named teachers are in the source and 16 original
-group-specific rows omit a teacher name. The draft therefore contains
-no `teacherEmail`. After import, the operator can provision teacher accounts
+no account emails. 15 named teachers are in the source; 16 PE rows with missing
+teacher names are excluded from the operational file. It contains no `teacherEmail`. After import, the operator can provision teacher accounts
 and select the exact `teacherName` from the imported schedule, or link an
 existing teacher account with the standalone script described below.
 No real-world teacher email list is necessary for the test environment.
-Entries with no `teacherName` remain unassigned until reviewed.
+No physical education account mapping is needed.
 
 ## 2. Schedule upload — Dasha (authorized staff)
 
@@ -86,10 +87,20 @@ script, the importer preserves/reuses its `teacherId` on repeated imports.
 Unlinked names cannot be offered to a teacher account yet.
 Do not place this allowlist or admin credentials in frontend JavaScript.
 
+API import rejects PE rows with HTTP 400 and a row error. Existing older PE
+records in local databases are preserved for audit but filtered out of lesson
+lists, attendance history, statistics, and Telegram reminders/missed alerts.
+Teacher creation, QR marking and XLSX export for PE are not supported.
+
 The backend currently accepts Express's default ~100 KB JSON request body limit.
 Split large exports into smaller files.
 
 ## 3. Schedule suggestions — Zhenya / Dasha
+
+PE does not appear in `/api/schedule/current`, `/suggestions` or
+`/available-lessons`, in the teacher's lesson list or discipline dropdown.
+Students will not be asked to scan QR for physical education.
+
 
 `GET /api/schedule/suggestions` (TEACHER or STUDENT)
 
