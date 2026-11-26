@@ -112,14 +112,14 @@ async function main() {
     data: { lessonId: justEnded, studentId: group4515, status: "PENDING" },
   });
 
-  // Teacher finished early, but scheduled end has not yet been reached.
+  // Teacher finished early: missed notifications start at actual finish.
   const finishedEarly = await makeSharedLesson(
     new Date(now - 20 * minute),
     new Date(now + 30 * minute),
     new Date(now - 2 * minute),
   );
 
-  // Teacher finished long ago, scheduled end occurred recently.
+  // Teacher finished long ago: scheduled end must not trigger again.
   const endedAfterEarlyFinish = await makeSharedLesson(
     new Date(now - 90 * minute),
     new Date(now - minute),
@@ -165,15 +165,15 @@ async function main() {
   assert(missedRows.length === 3 &&
     hasMiss(justEnded, group4514) &&
     !hasMiss(justEnded, group4515) &&
-    hasMiss(endedAfterEarlyFinish, group4514) &&
-    hasMiss(endedAfterEarlyFinish, group4515),
-    "Missed notifications ignored recorded attendance or lost a group");
-  console.log("PASS: missed notices exclude PENDING attendance and include both groups");
+    hasMiss(finishedEarly, group4514) &&
+    hasMiss(finishedEarly, group4515),
+    "Missed notifications must follow actual finish and ignore PENDING marks");
+  console.log("PASS: missed notices follow early finish and exclude PENDING attendance");
 
-  assert(!missedRows.some((row) => row.lessonId === finishedEarly) &&
+  assert(!missedRows.some((row) => row.lessonId === endedAfterEarlyFinish) &&
     !missedRows.some((row) => row.userId === outsider || row.userId === noTelegram),
-    "Premature or unrelated missed notification was created");
-  console.log("PASS: early finish excluded until endsAt, outsiders excluded");
+    "The scheduled end must not re-trigger missed notices; outsiders excluded");
+  console.log("PASS: no second notice at scheduled end; outsiders excluded");
 
   const missedAgain = await scheduleMissedTelegramNotifications(lessonIds);
   assert(missedAgain === 0, "Duplicate missed notification was added");
