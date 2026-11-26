@@ -470,6 +470,29 @@ async function main() {
     sharedStats?.attendancePercentage ===
       Number((100 / sharedStats.totalStudents).toFixed(2)),
     "Guest attendance must not inflate official group percentages");
+
+  const perGroup = new Map<number, any>(
+    (sharedStats?.groupStats ?? []).map((row: any) => [row.groupId, row]),
+  );
+  const firstGroup = perGroup.get(g1);
+  const secondGroup = perGroup.get(g2);
+  const firstGroupSize = await prisma.user.count({ where: { role: "STUDENT", groupId: g1 } });
+  const secondGroupSize = await prisma.user.count({ where: { role: "STUDENT", groupId: g2 } });
+  assert(perGroup.size === 2 &&
+    sharedStats.groupStats.length === 2 &&
+    firstGroup?.groupName === "4514" &&
+    secondGroup?.groupName === "4515" &&
+    firstGroup.totalStudents === firstGroupSize &&
+    secondGroup.totalStudents === secondGroupSize &&
+    firstGroup.attendedStudents === 1 &&
+    secondGroup.attendedStudents === 0 &&
+    firstGroup.attendancePercentage === Number((100 / firstGroupSize).toFixed(2)) &&
+    secondGroup.attendancePercentage === 0 &&
+    firstGroup.totalStudents + secondGroup.totalStudents === sharedStats.totalStudents &&
+    firstGroup.attendedStudents + secondGroup.attendedStudents === sharedStats.attendedStudents &&
+    sharedStats.guestAttendedStudents === 1,
+    "Shared lecture groupStats must split 4514 and 4515 and exclude invited guest 4516");
+  console.log("PASS: lesson groupStats accurately splits participating groups and excludes guests");
   console.log("PASS: authorized guest counted separately, not in group percentage");
 
   const groupStats = await request("GET", "/api/attendance/teacher/groups/stats", teacher.token);
