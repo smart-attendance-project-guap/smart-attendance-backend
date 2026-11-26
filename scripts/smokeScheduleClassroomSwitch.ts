@@ -205,6 +205,11 @@ async function main() {
     "Retry changed room or duplicated lesson");
   console.log("PASS: repeat start opens the original lesson without changing its classroom");
 
+  // Release the synthetic room blocker before testing the unrelated default
+  // schedule; otherwise its teacher/group would still legitimately conflict.
+  await prisma.lesson.delete({ where: { id: occupiedId } });
+  createdLessons.splice(createdLessons.indexOf(occupiedId), 1);
+
   // No classroomId: continue using the unique room matching the original timetable.
   const defaultStart = await post(singleSchedule, outsider.token);
   check(defaultStart.status === 201 && Number.isInteger(defaultStart.data.lessonId),
