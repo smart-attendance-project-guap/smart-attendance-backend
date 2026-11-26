@@ -60,6 +60,7 @@ async function main() {
   const teacher = await createUser("TEACHER", "Teacher", null);
   const a = await createUser("STUDENT", "Alpha", group4515.id);
   const b = await createUser("STUDENT", "Beta", group4515.id);
+  const guest = await createUser("STUDENT", "Guest", group4514.id);
 
   const room = await prisma.classroom.create({
     data: { name: classroomName, latitude: 59.929561, longitude: 30.296671 },
@@ -149,6 +150,12 @@ async function main() {
     },
   });
   lessonIds.push(earlyLesson.id);
+  await prisma.lessonGuest.create({
+    data: { lessonId: earlyLesson.id, studentId: guest.id },
+  });
+  await prisma.attendance.create({
+    data: { lessonId: earlyLesson.id, studentId: guest.id, status: "PRESENT" },
+  });
   const earlyDownload = await fetch(exportUrl, {
     headers: { Authorization: `Bearer ${teacherToken}` },
   });
@@ -163,7 +170,7 @@ async function main() {
     earlyAlpha.getCell(6).value === 2 && earlyAlpha.getCell(7).value === 2 &&
     earlyBeta.getCell(6).value === 0 && earlyBeta.getCell(7).value === 4,
     "Early-finished lesson must immediately count as missed in Excel totals");
-  console.log("PASS: early finish is counted in Excel before scheduled endsAt");
+  console.log("PASS: early finish counts in Excel, while outside-group guest is excluded");
 
 
   const studentExport = await fetch(exportUrl, { headers: { Authorization: `Bearer ${studentToken}` } });
