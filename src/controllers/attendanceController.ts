@@ -42,7 +42,7 @@ export async function markAttendance(req: AuthRequest, res: Response) {
       where: {
         id: lessonId,
       },
-      include: { lessonGroups: { select: { groupId: true } } },
+      include: { lessonGroups: { select: { groupId: true } }, guests: { where: { studentId: req.user.userId }, select: { studentId: true } } },
     });
 
     if (!lesson) {
@@ -93,7 +93,8 @@ export async function markAttendance(req: AuthRequest, res: Response) {
     if (
       student.groupId === null ||
       (student.groupId !== lesson.groupId &&
-        !lesson.lessonGroups.some((entry) => entry.groupId === student.groupId))
+        !lesson.lessonGroups.some((entry) => entry.groupId === student.groupId) &&
+        !lesson.guests.some((guest) => guest.studentId === student.id))
     ) {
       return res.status(403).json({
         message: "Student does not belong to this lesson group",
