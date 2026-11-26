@@ -1,29 +1,51 @@
 # Smart Attendance: API for timetable / export MVP
 
-**Base:** \`http://localhost:3000\`. Every request below requires \`Authorization: Bearer <JWT>\`.
-New APIs are designed for \`feature-reports-and-schedule-mvp\` (not merged into \`feature-backend\`).
+**Base:** `http://localhost:3000`. Every request below requires `Authorization: Bearer <JWT>`.
+New APIs are designed for `feature-reports-and-schedule-mvp` (not merged into `feature-backend`).
 
 ## 1. Excel journal — Dasha (teacher UI)
 
-\`GET /api/attendance/teacher/export?groupId=2&discipline=Алгоритмы%20и%20структуры%20данных&from=2026-11-01&to=2026-11-30\`
+`GET /api/attendance/teacher/export?groupId=2&discipline=Алгоритмы%20и%20структуры%20данных&from=2026-11-01&to=2026-11-30`
 
 Requires TEACHER; only own lessons for the selected group and discipline. Returns binary XLSX:
-\`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\`.
-Download via \`fetch\`, \`response.blob()\`, \`URL.createObjectURL\` and an \`<a download="attendance.xlsx">\`.
+`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
+Download via `fetch`, `response.blob()`, `URL.createObjectURL` and an `<a download="attendance.xlsx">`.
 Filter UI needs group, discipline, from, to. Max range 180 days.
 The sheet lists students, lesson dates in Moscow time, statuses and two totals. Totals count
-only \`PRESENT\`/\`LATE\` as attended and only teacher-finished, scheduled-end-passed
-lessons in the denominator, matching current \`getAttendanceStats\`. PENDING and
+only `PRESENT`/`LATE` as attended and only teacher-finished, scheduled-end-passed
+lessons in the denominator, matching current `getAttendanceStats`. PENDING and
 REJECTED are distinguished, but counted as not attended on completed lessons.
+
+## Prepared schedule already in repository
+
+The reviewed source schedule is `data/schedule-4514-4517.json` (176 group-specific rows).
+The **import-compatible draft** is `data/schedule-4514-4517.import-ready.json`
+(118 items, representing exactly the same 176 group-specific rows).
+It consolidates 22 same-time / same-room / same-discipline / same-teacher
+multi-group entries into `groups` arrays. These are **candidate shared classes**
+that should be checked against the GUAP original timetable before final rollout.
+
+Existing classroom labels, including building suffixes such as
+`52-17 (Б. Морская 67)`, were preserved intentionally: the import
+`upsert` key includes the classroom string. The lesson-start endpoint
+resolves the building suffix to the actual `Classroom` record.
+
+**Teacher account mapping is not complete:** the source contains names but
+no account emails. 15 named teachers are in the source and 16 original
+group-specific rows omit a teacher name. The draft therefore contains
+no `teacherEmail`. Uploading it updates shared-lecture associations,
+but leaves `teacherId=null`, so a teacher will not receive schedule
+suggestions until an authorized reviewer supplies real registered
+teacher emails and reimports the updated file.
 
 ## 2. Schedule upload — Dasha (authorized staff)
 
 **Supported file format: UTF-8 JSON**, array of entries. Browser reads a
-\`.json\` file and POSTs \`{"entries": <parsed-array>}\` as \`application/json\`
-to \`POST /api/schedule/import\`. No multipart/form-data support.
+`.json` file and POSTs `{"entries": <parsed-array>}` as `application/json`
+to `POST /api/schedule/import`. No multipart/form-data support.
 
 Example file:
-\`\`\`json
+```json
 [
   {
     "groups": ["4514", "4515"],
@@ -43,21 +65,21 @@ Example file:
     "endsAt": "2026-12-01T13:30:00+03:00"
   }
 ]
-\`\`\`
+```
 
-\`groups\` (1–4) marks one **shared lecture** across groups. A single \`group\` is
+`groups` (1–4) marks one **shared lecture** across groups. A single `group` is
 accepted for backward compatibility. All entries are expanded into per-group
-\`ScheduleEntry\` rows with one common \`sharedKey\`. A retry uses \`upsert\`,
+`ScheduleEntry` rows with one common `sharedKey`. A retry uses `upsert`,
 so it does not create duplicate timetable rows. Response:
-\`{"imported":3,"sourceEntries":2}\`.
-Errors: HTTP 400 \`{"errors":[{"row":1,"message":"..."}]}\`. Rows numbered
+`{"imported":3,"sourceEntries":2}`.
+Errors: HTTP 400 `{"errors":[{"row":1,"message":"..."}]}`. Rows numbered
 starting at 1. The entire import is validated before writing.
 
 Importing other teachers' schedules is a privileged operation. The importing user
 must be TEACHER and their email must be in backend environment variable
-\`SCHEDULE_IMPORT_ALLOWED_EMAILS=teacher@example.org\` (comma-separated; disabled by default).
-\`teacherEmail\` must refer to a **registered teacher**; otherwise that row is
-rejected. When it is absent, \`teacherName\` is stored for display, but that row
+`SCHEDULE_IMPORT_ALLOWED_EMAILS=teacher@example.org` (comma-separated; disabled by default).
+`teacherEmail` must refer to a **registered teacher**; otherwise that row is
+rejected. When it is absent, `teacherName` is stored for display, but that row
 **cannot be offered to a teacher account** until it is reimported with teacherEmail.
 Do not place this allowlist or admin credentials in frontend JavaScript.
 
@@ -66,26 +88,26 @@ Split large exports into smaller files.
 
 ## 3. Schedule suggestions — Zhenya / Dasha
 
-\`GET /api/schedule/suggestions\` (TEACHER or STUDENT)
+`GET /api/schedule/suggestions` (TEACHER or STUDENT)
 
-Returns \`{"suggestions":[...]}\` for starts no later than **now + 30 minutes**
+Returns `{"suggestions":[...]}` for starts no later than **now + 30 minutes**
 and ends later than now. Students see their own group. Teachers see entries linked
-to their account by \`teacherEmail\` at import. Each item includes:
-\`id\`, \`scheduleEntryId\`, \`canonicalScheduleId\`,
-\`discipline\`, \`teacherId\`, \`teacherName\`, \`classroom\`,
-\`groups: [{id,name}]\`, \`startsAt\`, \`endsAt\`.
+to their account by `teacherEmail` at import. Each item includes:
+`id`, `scheduleEntryId`, `canonicalScheduleId`,
+`discipline`, `teacherId`, `teacherName`, `classroom`,
+`groups: [{id,name}]`, `startsAt`, `endsAt`.
 
 For existing student-site 15-minute notification, legacy
-\`GET /api/schedule/current\` remains unchanged. Thirty-minute suggestions are
-**not** permission to check in early: \`POST /api/attendance/:id/mark\` still
+`GET /api/schedule/current` remains unchanged. Thirty-minute suggestions are
+**not** permission to check in early: `POST /api/attendance/:id/mark` still
 uses the actual lesson start time.
 
 Teacher chooses a suggestion:
-\`POST /api/schedule/:id/start\` (TEACHER; optional JSON \`{"classroomId": 123}\`).
-Response \`{"lessonId":42,"created":true}\`. Repeating the same start returns
-\`{"lessonId":42,"created":false}\`. If more than one registered classroom has
-the same name, HTTP 409 returns \`{"classrooms":[{"id":...,"building":...}]}\`;
-show these choices to the teacher and retry with \`classroomId\`.
+`POST /api/schedule/:id/start` (TEACHER; optional JSON `{"classroomId": 123}`).
+Response `{"lessonId":42,"created":true}`. Repeating the same start returns
+`{"lessonId":42,"created":false}`. If more than one registered classroom has
+the same name, HTTP 409 returns `{"classrooms":[{"id":...,"building":...}]}`;
+show these choices to the teacher and retry with `classroomId`.
 If the discipline is missing from reference data, add it to the reference seed
 first or return an actionable UI error.
 
@@ -94,20 +116,20 @@ their student group or the source timetable. Present multiple suggestions as a l
 
 ## 4. Choosing another lesson / cross-group guest attendance — Zhenya / Dasha
 
-\`GET /api/schedule/available-lessons\` (STUDENT)
+`GET /api/schedule/available-lessons` (STUDENT)
 returns currently running actual lessons for which the student is **eligible**:
 own group, participating group of a shared lecture, or one-time teacher-approved
 guest. No unauthorized lessons are offered.
 
 Teacher can authorize an individual student's visit to a different group's lesson:
-\`POST /api/lessons/:id/guests\` (TEACHER of the lesson), JSON:
-\`{"studentEmail":"student@example.org"}\`.
-Returns \`{"lessonId":42,"studentId":51,"allowed":true}\`.
-\`GET /api/lessons/:id/guests\` lists invited students, only to the owner.
-Student then sees the allowed lesson in \`available-lessons\` and may select
+`POST /api/lessons/:id/guests` (TEACHER of the lesson), JSON:
+`{"studentEmail":"student@example.org"}`.
+Returns `{"lessonId":42,"studentId":51,"allowed":true}`.
+`GET /api/lessons/:id/guests` lists invited students, only to the owner.
+Student then sees the allowed lesson in `available-lessons` and may select
 and scan its QR **during that lesson's active period**. Existing
-\`POST /api/attendance/:lessonId/mark\` accepts such a permitted guest.
-One-time guest authorization **does not update \`User.groupId\`** or the
+`POST /api/attendance/:lessonId/mark` accepts such a permitted guest.
+One-time guest authorization **does not update `User.groupId`** or the
 original schedule. The student's record appears in the teacher's lesson
 attendance list and in student history, but does not retroactively change
 the group's scheduled-lesson statistics.
@@ -118,8 +140,8 @@ to security rules.
 
 ## Rollout and checks
 
-1. Apply both Prisma migrations, then \`npx.cmd prisma generate\`.
-2. \`npm.cmd run build\`; \`npx.cmd tsx scripts/smokeXlsxExport.ts\`.
+1. Apply both Prisma migrations, then `npx.cmd prisma generate`.
+2. `npm.cmd run build`; `npx.cmd tsx scripts/smokeXlsxExport.ts`.
 3. Log in with allowed TEACHER account; upload the sample file twice and verify
    same timetable rows, then try invalid date and unknown teacher email.
 4. Test student vs teacher suggestions, ownership, and 30-minute boundary.
