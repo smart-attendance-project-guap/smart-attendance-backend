@@ -107,7 +107,7 @@ router.post("/:id/start", authMiddleware, async (req: AuthRequest, res: Response
     if (siblings.length > 4) {
       return res.status(409).json({ message: "One lesson supports at most four groups" });
     }
-    const canonicalId = siblings[0].id;
+    const canonicalId = siblings[0]!.id;
     const existing = await prisma.lesson.findUnique({
       where: { sourceScheduleEntryId: canonicalId },
       select: { id: true },
@@ -125,7 +125,7 @@ router.post("/:id/start", authMiddleware, async (req: AuthRequest, res: Response
     });
     const selectedClassroomId = req.body?.classroomId;
     const classroomId = selectedClassroomId === undefined
-      ? (classrooms.length === 1 ? classrooms[0].id : null)
+      ? (classrooms.length === 1 ? classrooms[0]!.id : null)
       : selectedClassroomId;
     if (typeof classroomId !== "number" || !Number.isSafeInteger(classroomId) ||
         !classrooms.some((room) => room.id === classroomId)) {
@@ -159,7 +159,7 @@ router.post("/:id/start", authMiddleware, async (req: AuthRequest, res: Response
       create: {
         sourceScheduleEntryId: canonicalId,
         teacherId: req.user.userId,
-        groupId: groupIds[0],
+        groupId: groupIds[0]!,
         classroomId,
         discipline: discipline.name,
         startsAt: schedule.startsAt,
