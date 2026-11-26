@@ -4,6 +4,7 @@ import type { AuthRequest } from "../middleware/authMiddleware.js";
 import { nanoid } from "nanoid";
 import { redisClient } from "../redis.js";
 import { isAttendanceExcluded } from "../utils/attendanceDisciplinePolicy.js";
+import { lessonOverlapsWindow } from "../utils/lessonTimeConflicts.js";
 
 export async function createLesson(req: AuthRequest, res: Response) {
   try {
@@ -158,11 +159,10 @@ export async function createLesson(req: AuthRequest, res: Response) {
     }
 
 
-    // Проверяем пересечения занятий по времени
+    // A teacher's explicit early finish frees room, groups, and teacher immediately.
     const conflictingLesson = await prisma.lesson.findFirst({
       where: {
-        startsAt: { lt: end },
-        endsAt: { gt: start },
+        ...lessonOverlapsWindow(start, end),
         OR: [
           { classroomId: normalizedClassroomId },
           { groupId: { in: participatingGroupIds } },
