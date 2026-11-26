@@ -608,11 +608,40 @@ Authorization: Bearer <TEACHER_TOKEN>
 - startsAt
 - endsAt
 - group
+- groups
+- groupStats
 - classroom
 - totalStudents
 - attendedStudents
 - guestAttendedStudents
 - attendancePercentage
+
+Для каждой участвующей группы в `groupStats` есть:
+`groupId`, `groupName`, `totalStudents`, `attendedStudents`,
+`attendancePercentage`. Счётчики относятся только к студентам этой
+группы и учитывают статусы PRESENT/LATE. Например, для общей пары:
+
+```json
+{
+  "lessonId": 18,
+  "groups": [{"id": 2, "name": "4515"}, {"id": 3, "name": "4516"}],
+  "groupStats": [
+    {"groupId": 2, "groupName": "4515", "totalStudents": 5, "attendedStudents": 3, "attendancePercentage": 60},
+    {"groupId": 3, "groupName": "4516", "totalStudents": 4, "attendedStudents": 1, "attendancePercentage": 25}
+  ],
+  "totalStudents": 9,
+  "attendedStudents": 4,
+  "guestAttendedStudents": 1,
+  "attendancePercentage": 44.44
+}
+```
+
+Это пример фрагмента объекта из массива `stats`, не данные реального занятия.
+Суммы `totalStudents` и `attendedStudents` на уровне пары равны суммам
+по `groupStats`. Для фильтра по группе Frontend выбирает соответствующий
+элемент `groupStats`, а не использует общие счётчики пары.
+Показатель `guestAttendedStudents` относится ко всей паре, не к группе;
+в групповом проценте его учитывать нельзя.
 
 Здесь `totalStudents`, `attendedStudents` и `attendancePercentage`
 считаются только по студентам основной и дополнительных групп занятия.
