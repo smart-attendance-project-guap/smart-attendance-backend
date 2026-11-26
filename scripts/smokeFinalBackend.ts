@@ -133,12 +133,12 @@ async function main() {
   const betaRow = rowFor("Beta");
   check(alphaRow.getCell(5).value === 2 && alphaRow.getCell(6).value === 1,
     `Wrong totals for Alpha: ${alphaRow.getCell(5).text}/${alphaRow.getCell(6).text}, expected 2/1`);
-  check(betaRow.getCell(5).value === 0 && betaRow.getCell(6).value === 3,
-    `Wrong totals for Beta: ${betaRow.getCell(5).text}/${betaRow.getCell(6).text}, expected 0/3`);
+  check(betaRow.getCell(5).value === 0 && betaRow.getCell(6).value === 2,
+    `Wrong totals for Beta: ${betaRow.getCell(5).text}/${betaRow.getCell(6).text}, expected 0/2 (PENDING excluded)`);
   check(alphaRow.getCell(2).text === "Присутствовал" && alphaRow.getCell(3).text === "Опоздал" && alphaRow.getCell(4).text === "Пропуск", "Wrong Alpha status labels");
   check(betaRow.getCell(2).text === "Отклонено" && betaRow.getCell(3).text === "Ожидает проверки" && betaRow.getCell(4).text === "Пропуск", "Wrong Beta status labels");
-  console.log("PASS: Excel totals and statuses: Alpha 2/1, Beta 0/3");
-  // Early finish immediately changes the Excel denominator, even before endsAt.
+  console.log("PASS: Excel totals and statuses: Alpha 2/1, Beta 0/2; PENDING is not a missed lesson");
+  // Early finish closes QR but no-mark is provisional until planned end.
   const earlyLesson = await prisma.lesson.create({
     data: {
       teacherId: teacher.id,
@@ -167,11 +167,11 @@ async function main() {
   check(earlySheet, "Early-finish Excel worksheet missing");
   const earlyAlpha = earlySheet.getRow(alphaRow.number);
   const earlyBeta = earlySheet.getRow(betaRow.number);
-  check(earlyAlpha.getCell(5).text === "Пропуск" &&
-    earlyAlpha.getCell(6).value === 2 && earlyAlpha.getCell(7).value === 2 &&
-    earlyBeta.getCell(6).value === 0 && earlyBeta.getCell(7).value === 4,
-    "Early-finished lesson must immediately count as missed in Excel totals");
-  console.log("PASS: early finish counts in Excel, while outside-group guest is excluded");
+  check(earlyAlpha.getCell(5).text === "Нет отметки" &&
+    earlyAlpha.getCell(6).value === 2 && earlyAlpha.getCell(7).value === 1 &&
+    earlyBeta.getCell(6).value === 0 && earlyBeta.getCell(7).value === 2,
+    "Early-finished lesson must show 'Нет отметки' until its planned end, not a confirmed miss");
+  console.log("PASS: early-finished lesson shows no mark until scheduled end; no premature Excel miss");
 
   // A shared 4515 + 4514 lecture must produce a separate, correct Excel
   // report for each group, even when both groups attended the same lesson.
