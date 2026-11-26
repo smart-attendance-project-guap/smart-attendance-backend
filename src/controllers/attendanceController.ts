@@ -221,7 +221,6 @@ export async function getMissedLessons(
           { lessonGroups: { some: { groupId: student.groupId } } },
         ],
         finishedAt: { not: null },
-        endsAt: { lte: new Date() },
         attendances: {
           none: {
             studentId: student.id,
@@ -368,7 +367,6 @@ export async function getAttendanceStats(
           { lessonGroups: { some: { groupId: student.groupId } } },
         ],
         finishedAt: { not: null },
-        endsAt: { lte: new Date() },
       },
       include: {
         attendances: {
@@ -847,7 +845,6 @@ export async function getTeacherAttendanceStats(
         finishedAt: {
           not: null,
         },
-        endsAt: { lte: new Date() },
       },
       include: {
         attendances: true,
@@ -921,7 +918,6 @@ export async function getTeacherLessonStats(
         finishedAt: {
           not: null,
         },
-        endsAt: { lte: new Date() },
       },
       include: {
         group: true,
@@ -1005,7 +1001,6 @@ export async function getTeacherGroupStats(
         finishedAt: {
           not: null,
         },
-        endsAt: { lte: new Date() },
       },
       include: {
         group: true,
