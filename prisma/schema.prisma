@@ -196,6 +196,8 @@ model ScheduleEntry {
   endsAt      DateTime
 
   @@index([groupId, startsAt])
+  @@index([teacherId, startsAt])
+  @@index([sharedKey])
   @@unique([groupId, startsAt, discipline, classroom])
 }
 
