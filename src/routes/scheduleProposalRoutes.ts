@@ -119,9 +119,19 @@ router.post("/:id/start", authMiddleware, async (req: AuthRequest, res: Response
     });
     if (!discipline) return res.status(409).json({ message: "Schedule discipline missing from reference data" });
 
+    // Imported university timetables include the building in the room label.
+    // Keep that label in ScheduleEntry so reimporting updates existing rows
+    // instead of creating duplicates under a different classroom string.
+    const classroomLabel = schedule.classroom.trim();
+    const match = classroomLabel.match(/^(.+?)\\s*\\((Б\\. Морская 67|Гастелло 15|Ленсовета 14)\\)$/);
+    const roomName = match ? match[1]!.trim() : classroomLabel;
+    const buildingName = match
+      ? ({ "Б. Морская 67": "Большая Морская", "Гастелло 15": "Гастелло",
+           "Ленсовета 14": "Ленсовета" } as Record<string, string>)[match[2]!]
+      : undefined;
     const classrooms = await prisma.classroom.findMany({
-      where: { name: schedule.classroom },
-      select: { id: true, building: { select: { name: true } } },
+      where: { name: roomName, ...(buildingName ? { building: { name: buildingName } } : {}) },
+      select: { id: true, name: true, building: { select: { name: true } } },
     });
     const selectedClassroomId = req.body?.classroomId;
     const classroomId = selectedClassroomId === undefined
