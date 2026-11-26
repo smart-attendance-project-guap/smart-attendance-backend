@@ -123,7 +123,7 @@ router.post("/:id/start", authMiddleware, async (req: AuthRequest, res: Response
     // Keep that label in ScheduleEntry so reimporting updates existing rows
     // instead of creating duplicates under a different classroom string.
     const classroomLabel = schedule.classroom.trim();
-    const match = classroomLabel.match(/^(.+?)\\s*\\((Б\\. Морская 67|Гастелло 15|Ленсовета 14)\\)$/);
+    const match = classroomLabel.match(/^(.+?)\s*\((Б\. Морская 67|Гастелло 15|Ленсовета 14)\)$/);
     const roomName = match ? match[1]!.trim() : classroomLabel;
     const buildingName = match
       ? ({ "Б. Морская 67": "Большая Морская", "Гастелло 15": "Гастелло",
