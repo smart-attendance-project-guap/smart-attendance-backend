@@ -1,0 +1,36 @@
+name: Install ExcelJS dependency and verify export
+
+on:
+  push:
+    branches: [feature-reports-and-schedule-mvp]
+    paths:
+      - .github/workflows/prepare-exceljs-lock.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update-lock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm install --save-exact exceljs@4.4.0
+      - run: npx prisma generate
+      - run: npm run build
+      - run: npx tsx scripts/smokeXlsxExport.ts
+      - name: Commit updated dependency manifests
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json
+          git commit -m 'Use ExcelJS for standards-compatible attendance workbooks'
+          git push origin HEAD:feature-reports-and-schedule-mvp
