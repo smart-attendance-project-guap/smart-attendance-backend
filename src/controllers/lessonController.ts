@@ -280,6 +280,13 @@ export async function finishLesson(req: AuthRequest, res: Response) {
       });
     }
 
+    // Early finish counts immediately. Do not allow marking a future lesson finished.
+    if (lesson.startsAt.getTime() > Date.now()) {
+      return res.status(409).json({
+        message: "Lesson has not started yet",
+      });
+    }
+
     const updatedLesson = await prisma.lesson.update({
       where: {
         id: lessonId,
