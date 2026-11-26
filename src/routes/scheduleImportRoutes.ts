@@ -65,6 +65,21 @@ router.post("/import", authMiddleware, async (req: AuthRequest, res: Response) =
       select: { id: true, email: true, firstName: true, lastName: true },
     });
     const teacherByEmail = new Map(teachers.map((teacher) => [teacher.email.toLowerCase(), teacher]));
+    // Preserve explicit teacher assignments when the same timetable JSON is imported again.
+    // A given display name may only be inferred if all existing assignments agree.
+    const alreadyAssigned = await prisma.scheduleEntry.findMany({
+      where: { teacherName: { not: null }, teacherId: { not: null } },
+      select: { teacherName: true, teacherId: true },
+    });
+    const linkedByName = new Map<string, number>();
+    const ambiguousNames = new Set<string>();
+    for (const item of alreadyAssigned) {
+      if (!item.teacherName || item.teacherId === null) continue;
+      const current = linkedByName.get(item.teacherName);
+      if (current !== undefined && current !== item.teacherId) ambiguousNames.add(item.teacherName);
+      else linkedByName.set(item.teacherName, item.teacherId);
+    }
+
     const errors: Array<{ row: number; message: string }> = [];
     const rows: Array<{
       groupId: number; discipline: string; classroom: string;
@@ -110,6 +125,13 @@ router.post("/import", authMiddleware, async (req: AuthRequest, res: Response) =
       }
       const teacherName = item.teacherName?.trim() ??
         (teacher ? teacher.lastName + " " + teacher.firstName : null);
+      if (!teacherEmail && teacherName && ambiguousNames.has(teacherName)) {
+        errors.push({ row: rowNumber, message: "teacherName has multiple linked accounts; specify teacherEmail" });
+        continue;
+      }
+      const resolvedTeacherId = teacher?.id ??
+        (!teacherEmail && teacherName ? linkedByName.get(teacherName) ?? null : null);
+
       const sharedKey = names.length > 1
         ? createHash("sha256").update(JSON.stringify([
             [...names].sort(), item.discipline.trim(), item.classroom.trim(),
@@ -120,7 +142,7 @@ router.post("/import", authMiddleware, async (req: AuthRequest, res: Response) =
         rows.push({
           groupId: groups.get(name)!, discipline: item.discipline.trim(),
           classroom: item.classroom.trim(), startsAt: start, endsAt: end,
-          teacherId: teacher?.id ?? null, teacherName, sharedKey,
+          teacherId: resolvedTeacherId, teacherName, sharedKey,
         });
       }
     }
