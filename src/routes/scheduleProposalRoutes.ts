@@ -4,6 +4,7 @@ import type { AuthRequest } from "../middleware/authMiddleware.js";
 import { authMiddleware } from "../middleware/authMiddleware.js";
 import { prisma } from "../prisma.js";
 import { isAttendanceExcluded } from "../utils/attendanceDisciplinePolicy.js";
+import { lessonOverlapsWindow } from "../utils/lessonTimeConflicts.js";
 
 const router = Router();
 const LOOKAHEAD_MINUTES = 30;
@@ -153,8 +154,7 @@ router.post("/:id/start", authMiddleware, async (req: AuthRequest, res: Response
     const groupIds = [...new Set(siblings.map((s) => s.groupId))];
     const collision = await prisma.lesson.findFirst({
       where: {
-        startsAt: { lt: schedule.endsAt },
-        endsAt: { gt: schedule.startsAt },
+        ...lessonOverlapsWindow(schedule.startsAt, schedule.endsAt),
         OR: [
           { classroomId },
           { teacherId: req.user.userId },
