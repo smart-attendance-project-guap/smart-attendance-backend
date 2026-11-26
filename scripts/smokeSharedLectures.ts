@@ -23,7 +23,6 @@ app.use("/api/attendance", attendanceRoutes);
 const server = createServer(app);
 
 let lessonId: number | undefined;
-let followupLessonId: number | undefined;
 let classroomId: number | undefined;
 const userIds: number[] = [];
 let port = 0;
@@ -391,48 +390,13 @@ async function main() {
     guestAttendanceList.body.absentStudents.every((student: any) => student.id !== third.id),
     "Teacher must see the guest separately from enrolled group members");
 
-  // A new lecture while the original is still active must be rejected.
-  const nextLessonInput = {
-    discipline: discipline.name,
-    groupId: g1,
-    groupIds: [g1, g2],
-    classroomId,
-    startsAt: new Date(now + 2 * 60_000).toISOString(),
-    endsAt: new Date(now + 20 * 60_000).toISOString(),
-  };
-  const collisionBeforeFinish = await request(
-    "POST", "/api/lessons", teacher.token, nextLessonInput,
-  );
-  assert(collisionBeforeFinish.status === 409,
-    "The original unfinished lecture must still occupy classroom, teacher and groups");
-
-  // Finishing before the scheduled endsAt counts immediately in all summaries.
+  // The main shared-lecture test uses real reference groups (4514/4515).
+  // Do not test booking conflicts here: another legitimate lecture of either
+  // group can overlap, producing HTTP 409 for an unrelated lesson.
+  // A separate isolated fixture below tests the actual early-finish rule.
   const finished = await request("PATCH", `/api/lessons/${lessonId}/finish`, teacher.token);
   assert(finished.status === 200 && finished.body.lesson?.finishedAt,
     "Teacher could not finish the temporary lesson");
-
-  // Overlap with the REAL completed interval must still be rejected.
-  const earlyFinishTime = new Date(finished.body.lesson.finishedAt).getTime();
-  const actualOverlap = await request("POST", "/api/lessons", teacher.token, {
-    ...nextLessonInput,
-    startsAt: new Date(now - 30_000).toISOString(),
-  });
-  assert(earlyFinishTime > now - 30_000 &&
-    earlyFinishTime < new Date(nextLessonInput.startsAt).getTime() &&
-    actualOverlap.status === 409,
-    "New lecture starting before the real finish must still be rejected");
-
-  // But immediately AFTER the real finish, room/group/teacher are released:
-  // the new lesson starts while the original scheduled endsAt is still ahead.
-  const allowedFollowup = await request(
-    "POST", "/api/lessons", teacher.token, nextLessonInput,
-  );
-  assert(allowedFollowup.status === 201 &&
-    Number.isInteger(allowedFollowup.body.lesson?.id),
-    `Early-finished lecture still blocks a later class: ${allowedFollowup.status} ${JSON.stringify(allowedFollowup.body)}`);
-  followupLessonId = allowedFollowup.body.lesson.id;
-  console.log("PASS: early finish frees teacher, groups and classroom before scheduled endsAt");
-  console.log("PASS: actual pre-finish overlap still rejected and unfinished lesson still blocks");
 
   const earlyStats = await request("GET", "/api/attendance/teacher/stats", teacher.token);
   assert(earlyStats.status === 200 &&
@@ -555,6 +519,10 @@ async function main() {
     studentStats.body.attendedLessons === 0,
     "Group 4515 rejected mark must appear in its own student statistics");
 
+  // This fixture uses unique group/classroom/teacher resources and cannot
+  // collide with pre-existing student lessons in the test database.
+  await verifyIsolatedEarlyFinishRebooking(discipline.name);
+
   console.log("PASS: four-group limit includes primary group");
   console.log("PASS: duplicate scan does not create an extra mark");
   console.log("PASS: group 4515 attendance history displays 4515");
@@ -582,12 +550,128 @@ async function main() {
   console.log("Temporary data cleanup starts automatically.");
 }
 
+/**
+ * A booking-conflict regression MUST NOT depend on university reference groups:
+ * their other legitimate scheduled lessons may already occupy the same interval.
+ * Create private resources, exercise the real HTTP endpoints, and remove only
+ * those private records even when one assertion fails.
+ */
+async function verifyIsolatedEarlyFinishRebooking(discipline: string): Promise<void> {
+  const marker = randomUUID();
+  let originalId: number | undefined;
+  let followupId: number | undefined;
+  let isolatedGroupId: number | undefined;
+  let isolatedClassroomId: number | undefined;
+  let isolatedTeacherId: number | undefined;
+
+  try {
+    const group = await prisma.group.create({
+      data: { name: `SMOKE-BOOKING-${marker}` },
+      select: { id: true },
+    });
+    isolatedGroupId = group.id;
+    const room = await prisma.classroom.create({
+      data: {
+        name: `SMOKE-BOOKING-${marker}`,
+        latitude: 59.929561,
+        longitude: 30.296671,
+      },
+      select: { id: true },
+    });
+    isolatedClassroomId = room.id;
+    const teacher = await prisma.user.create({
+      data: {
+        email: `smoke-booking-${marker}@example.invalid`,
+        password: "no-login-smoke-only",
+        firstName: "Smoke",
+        lastName: "Booking",
+        role: "TEACHER",
+      },
+      select: { id: true },
+    });
+    isolatedTeacherId = teacher.id;
+    const token = generateToken(teacher.id, "TEACHER");
+    const start = Date.now();
+    const plannedEnd = new Date(start + 25 * 60_000);
+    const original = await request("POST", "/api/lessons", token, {
+      discipline,
+      groupId: group.id,
+      classroomId: room.id,
+      startsAt: new Date(start - 60_000).toISOString(),
+      endsAt: plannedEnd.toISOString(),
+    });
+    assert(original.status === 201 && Number.isInteger(original.body.lesson?.id),
+      `Isolated original lecture creation failed: ${original.status} ${JSON.stringify(original.body)}`);
+    originalId = original.body.lesson.id;
+
+    const nextStart = new Date(start + 3 * 60_000);
+    const nextEnd = new Date(start + 15 * 60_000);
+    const nextLesson = {
+      discipline,
+      groupId: group.id,
+      classroomId: room.id,
+      startsAt: nextStart.toISOString(),
+      endsAt: nextEnd.toISOString(),
+    };
+
+    const blockedWhileActive = await request("POST", "/api/lessons", token, nextLesson);
+    assert(blockedWhileActive.status === 409,
+      "Active lecture must block another booking of its room, group and teacher");
+
+    const finish = await request("PATCH", `/api/lessons/${originalId}/finish`, token);
+    assert(finish.status === 200 && finish.body.lesson?.finishedAt,
+      "Could not finish the isolated lecture before the scheduled end");
+    const actuallyFinishedAt = new Date(finish.body.lesson.finishedAt).getTime();
+    assert(actuallyFinishedAt < nextStart.getTime() &&
+      actuallyFinishedAt < plannedEnd.getTime(),
+      "Test setup did not represent an early finish before the next booking");
+
+    const blockedBeforeActualFinish = await request("POST", "/api/lessons", token, {
+      ...nextLesson,
+      startsAt: new Date(actuallyFinishedAt - 30_000).toISOString(),
+    });
+    assert(blockedBeforeActualFinish.status === 409,
+      "A class must still block bookings beginning before its actual finish");
+
+    const allowed = await request("POST", "/api/lessons", token, nextLesson);
+    assert(allowed.status === 201 && Number.isInteger(allowed.body.lesson?.id),
+      `Early-finished class still blocked private resources: ${allowed.status} ${JSON.stringify(allowed.body)}`);
+    followupId = allowed.body.lesson.id;
+
+    const persistedOriginal = await prisma.lesson.findUnique({
+      where: { id: originalId },
+      select: { startsAt: true, endsAt: true, finishedAt: true },
+    });
+    assert(persistedOriginal?.finishedAt &&
+      persistedOriginal.endsAt.getTime() === plannedEnd.getTime() &&
+      persistedOriginal.startsAt.getTime() < persistedOriginal.finishedAt.getTime(),
+      "The original lecture schedule and finish timestamp must be preserved");
+
+    console.log("PASS: early finish frees teacher, groups and classroom before scheduled endsAt");
+    console.log("PASS: actual pre-finish overlap still rejected and unfinished lesson still blocks");
+  } finally {
+    if (followupId !== undefined) {
+      await prisma.attendance.deleteMany({ where: { lessonId: followupId } });
+      await prisma.lesson.delete({ where: { id: followupId } });
+    }
+    if (originalId !== undefined) {
+      await prisma.attendance.deleteMany({ where: { lessonId: originalId } });
+      await prisma.lesson.delete({ where: { id: originalId } });
+    }
+    if (isolatedTeacherId !== undefined) {
+      await prisma.user.delete({ where: { id: isolatedTeacherId } });
+    }
+    if (isolatedClassroomId !== undefined) {
+      await prisma.classroom.delete({ where: { id: isolatedClassroomId } });
+    }
+    if (isolatedGroupId !== undefined) {
+      await prisma.group.delete({ where: { id: isolatedGroupId } });
+    }
+  }
+}
+
 async function cleanup() {
   try {
-    if (followupLessonId) {
-      await prisma.attendance.deleteMany({ where: { lessonId: followupLessonId } });
-      await prisma.lesson.delete({ where: { id: followupLessonId } });
-    }
     if (lessonId) {
       await prisma.attendance.deleteMany({ where: { lessonId } });
       await prisma.lesson.delete({ where: { id: lessonId } });
