@@ -410,6 +410,29 @@ async function main() {
   const closedQr = await request("POST", `/api/lessons/${lessonId}/qr`, teacher.token);
   assert(closedQr.status === 400, "QR must stay closed after early finish");
 
+  const approvedGuest = await request(
+    "PATCH", `/api/attendance/${guestMark.body.attendance.id}/approve`, teacher.token,
+  );
+  assert(approvedGuest.status === 200 &&
+    ["PRESENT", "LATE"].includes(approvedGuest.body.attendance?.status),
+    "Guest pending mark must still be approvable after lesson finish");
+
+  const guestOnlyStats = await request("GET", "/api/attendance/teacher/stats", teacher.token);
+  const guestOnlyLessons = await request("GET", "/api/attendance/teacher/lessons/stats", teacher.token);
+  const guestOnlyLesson = guestOnlyLessons.body.stats?.find(
+    (row: any) => row.lessonId === lessonId,
+  );
+  assert(guestOnlyStats.status === 200 &&
+    guestOnlyStats.body.attendedStudents === 0 &&
+    guestOnlyStats.body.guestAttendedStudents === 1 &&
+    guestOnlyStats.body.attendancePercentage === 0 &&
+    guestOnlyLessons.status === 200 &&
+    guestOnlyLesson?.attendedStudents === 0 &&
+    guestOnlyLesson?.guestAttendedStudents === 1 &&
+    guestOnlyLesson?.attendancePercentage === 0,
+    "Guest-only attendance must show 0% for official groups, not a false positive rate");
+  console.log("PASS: guest-only presence yields 0% group attendance, 1 guest present");
+
   const approved = await request(
     "PATCH", `/api/attendance/${a.body.attendance.id}/approve`, teacher.token,
   );
@@ -428,13 +451,6 @@ async function main() {
     teacherStats.body.totalLessons === 1 &&
     teacherStats.body.attendedStudents === 1,
     "Teacher summary must count exactly one approved mark in the shared lecture");
-
-  const approvedGuest = await request(
-    "PATCH", `/api/attendance/${guestMark.body.attendance.id}/approve`, teacher.token,
-  );
-  assert(approvedGuest.status === 200 &&
-    ["PRESENT", "LATE"].includes(approvedGuest.body.attendance?.status),
-    "Guest pending mark must still be approvable after lesson finish");
 
   const statsWithGuest = await request("GET", "/api/attendance/teacher/stats", teacher.token);
   const lessonStatsWithGuest = await request(
