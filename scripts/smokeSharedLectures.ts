@@ -7,6 +7,7 @@ import { prisma } from "../src/prisma.js";
 import { redisClient, connectRedis } from "../src/redis.js";
 import { generateToken } from "../src/utils/jwt.js";
 import lessonRoutes from "../src/routes/lessonRoutes.js";
+import lessonGuestRoutes from "../src/routes/lessonGuestRoutes.js";
 import attendanceRoutes from "../src/routes/attendanceRoutes.js";
 
 // Only this isolated smoke test needs local WebAuthn defaults.
@@ -16,6 +17,7 @@ process.env.WEBAUTHN_RP_ID ||= "localhost";
 
 const app = express();
 app.use(express.json());
+app.use("/api/lessons", lessonGuestRoutes);
 app.use("/api/lessons", lessonRoutes);
 app.use("/api/attendance", attendanceRoutes);
 const server = createServer(app);
@@ -358,6 +360,36 @@ async function main() {
     ownLessonHistory.lesson.group?.name === "4515",
     "Student history leaked QR secrets or lost non-sensitive lesson metadata");
 
+  // Invite the 4516 student explicitly: guest attendance is separate from 4514/4515 totals.
+  const guestUser = await prisma.user.findUnique({
+    where: { id: third.id }, select: { email: true },
+  });
+  assert(guestUser?.email, "Guest user missing");
+  const invitation = await request(
+    "POST", `/api/lessons/${lessonId}/guests`, teacher.token,
+    { studentEmail: guestUser.email },
+  );
+  assert(invitation.status === 200 && invitation.body.allowed === true,
+    "Teacher could not authorize a student from group 4516");
+
+  const guestQr = await request("POST", `/api/lessons/${lessonId}/qr`, teacher.token);
+  assert(guestQr.status === 200, "Guest QR could not be refreshed");
+  const guestMark = await request(
+    "POST", markPath, third.token, { qrToken: guestQr.body.qrToken },
+  );
+  assert(guestMark.status === 201 && guestMark.body.attendance?.status === "PENDING",
+    "Invited guest could not create a pending mark");
+
+  const guestAttendanceList = await request(
+    "GET", `/api/attendance/lesson/${lessonId}`, teacher.token,
+  );
+  const guestRow = guestAttendanceList.body.attendances?.find(
+    (row: any) => row.studentId === third.id,
+  );
+  assert(guestAttendanceList.status === 200 && guestRow?.isGuest === true &&
+    guestAttendanceList.body.absentStudents.every((student: any) => student.id !== third.id),
+    "Teacher must see the guest separately from enrolled group members");
+
   // Finishing before the scheduled endsAt counts immediately in all summaries.
   const finished = await request("PATCH", `/api/lessons/${lessonId}/finish`, teacher.token);
   assert(finished.status === 200, "Teacher could not finish the temporary lesson");
@@ -397,6 +429,33 @@ async function main() {
     teacherStats.body.attendedStudents === 1,
     "Teacher summary must count exactly one approved mark in the shared lecture");
 
+  const approvedGuest = await request(
+    "PATCH", `/api/attendance/${guestMark.body.attendance.id}/approve`, teacher.token,
+  );
+  assert(approvedGuest.status === 200 &&
+    ["PRESENT", "LATE"].includes(approvedGuest.body.attendance?.status),
+    "Guest pending mark must still be approvable after lesson finish");
+
+  const statsWithGuest = await request("GET", "/api/attendance/teacher/stats", teacher.token);
+  const lessonStatsWithGuest = await request(
+    "GET", "/api/attendance/teacher/lessons/stats", teacher.token,
+  );
+  const sharedStats = lessonStatsWithGuest.body.stats?.find(
+    (row: any) => row.lessonId === lessonId,
+  );
+  assert(statsWithGuest.status === 200 &&
+    statsWithGuest.body.attendedStudents === 1 &&
+    statsWithGuest.body.guestAttendedStudents === 1 &&
+    statsWithGuest.body.attendancePercentage ===
+      Number((100 / statsWithGuest.body.totalStudents).toFixed(2)) &&
+    lessonStatsWithGuest.status === 200 &&
+    sharedStats?.attendedStudents === 1 &&
+    sharedStats?.guestAttendedStudents === 1 &&
+    sharedStats?.attendancePercentage ===
+      Number((100 / sharedStats.totalStudents).toFixed(2)),
+    "Guest attendance must not inflate official group percentages");
+  console.log("PASS: authorized guest counted separately, not in group percentage");
+
   const groupStats = await request("GET", "/api/attendance/teacher/groups/stats", teacher.token);
   const byGroup = new Map<string, any>(
     (groupStats.body.stats ?? []).map((item: any) => [item.groupName, item]),
@@ -405,8 +464,9 @@ async function main() {
     byGroup.get("4514")?.totalLessons === 1 &&
     byGroup.get("4514")?.attendedStudents === 1 &&
     byGroup.get("4515")?.totalLessons === 1 &&
-    byGroup.get("4515")?.attendedStudents === 0,
-    "Shared lecture teacher stats must be split correctly by group");
+    byGroup.get("4515")?.attendedStudents === 0 &&
+    !byGroup.has("4516"),
+    "Shared lecture teacher stats must exclude the invited guest's home group");
 
   const studentStats = await request("GET", "/api/attendance/stats", second.token);
   assert(studentStats.status === 200 &&
