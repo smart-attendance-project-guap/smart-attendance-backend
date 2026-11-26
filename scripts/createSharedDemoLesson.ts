@@ -3,6 +3,7 @@
 import "dotenv/config";
 import { prisma } from "../src/prisma.js";
 import { isAttendanceExcluded } from "../src/utils/attendanceDisciplinePolicy.js";
+import { lessonOverlapsWindow } from "../src/utils/lessonTimeConflicts.js";
 
 const teacherEmail = "teacher@example.com";
 const allowedDatabase = "/smart_attendance";
@@ -66,8 +67,7 @@ async function main() {
 
   const overlapping = await prisma.lesson.findFirst({
     where: {
-      startsAt: { lt: endsAt },
-      endsAt: { gt: startsAt },
+      ...lessonOverlapsWindow(startsAt, endsAt),
       OR: [
         { teacherId: teacher.id },
         { groupId: { in: [first.id, second.id] } },
@@ -97,8 +97,7 @@ async function main() {
     const occupied = await prisma.lesson.findFirst({
       where: {
         classroomId: room.id,
-        startsAt: { lt: endsAt },
-        endsAt: { gt: startsAt },
+        ...lessonOverlapsWindow(startsAt, endsAt),
       },
       select: { id: true },
     });
