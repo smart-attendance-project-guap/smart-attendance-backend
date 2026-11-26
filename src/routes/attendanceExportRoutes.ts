@@ -4,6 +4,7 @@ import type { AuthRequest } from "../middleware/authMiddleware.js";
 import { authMiddleware } from "../middleware/authMiddleware.js";
 import { prisma } from "../prisma.js";
 import { makeXlsx } from "../utils/makeXlsx.js";
+import { isAttendanceExcluded } from "../utils/attendanceDisciplinePolicy.js";
 
 const router = Router();
 const MAX_DAYS = 180;
@@ -44,6 +45,9 @@ router.get("/teacher/export", authMiddleware, async (req: AuthRequest, res: Resp
     return res.status(400).json({ message: "Provide valid groupId, discipline, from and to (max 180 days)" });
   }
 
+  if (isAttendanceExcluded(discipline)) {
+    return res.status(400).json({ message: "Physical education is excluded from attendance exports" });
+  }
   try {
     const selectedGroup = await prisma.group.findUnique({
       where: { id: groupId }, select: { id: true, name: true },
