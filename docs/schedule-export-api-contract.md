@@ -33,10 +33,11 @@ resolves the building suffix to the actual `Classroom` record.
 **Teacher account mapping is not complete:** the source contains names but
 no account emails. 15 named teachers are in the source and 16 original
 group-specific rows omit a teacher name. The draft therefore contains
-no `teacherEmail`. Uploading it updates shared-lecture associations,
-but leaves `teacherId=null`, so a teacher will not receive schedule
-suggestions until an authorized reviewer supplies real registered
-teacher emails and reimports the updated file.
+no `teacherEmail`. After import, the operator can provision teacher accounts
+and select the exact `teacherName` from the imported schedule, or link an
+existing teacher account with the standalone script described below.
+No real-world teacher email list is necessary for the test environment.
+Entries with no `teacherName` remain unassigned until reviewed.
 
 ## 2. Schedule upload — Dasha (authorized staff)
 
@@ -79,8 +80,10 @@ Importing other teachers' schedules is a privileged operation. The importing use
 must be TEACHER and their email must be in backend environment variable
 `SCHEDULE_IMPORT_ALLOWED_EMAILS=teacher@example.org` (comma-separated; disabled by default).
 `teacherEmail` must refer to a **registered teacher**; otherwise that row is
-rejected. When it is absent, `teacherName` is stored for display, but that row
-**cannot be offered to a teacher account** until it is reimported with teacherEmail.
+rejected. When it is absent, `teacherName` is stored for display. If that exact name has
+previously been linked to exactly one teacher account by the trusted provisioning
+script, the importer preserves/reuses its `teacherId` on repeated imports.
+Unlinked names cannot be offered to a teacher account yet.
 Do not place this allowlist or admin credentials in frontend JavaScript.
 
 The backend currently accepts Express's default ~100 KB JSON request body limit.
@@ -92,7 +95,7 @@ Split large exports into smaller files.
 
 Returns `{"suggestions":[...]}` for starts no later than **now + 30 minutes**
 and ends later than now. Students see their own group. Teachers see entries linked
-to their account by `teacherEmail` at import. Each item includes:
+to their account by `teacherEmail` at import or by the trusted provisioning scripts. Each item includes:
 `id`, `scheduleEntryId`, `canonicalScheduleId`,
 `discipline`, `teacherId`, `teacherName`, `classroom`,
 `groups: [{id,name}]`, `startsAt`, `endsAt`.
@@ -137,6 +140,27 @@ the group's scheduled-lesson statistics.
 For other groups' classes not shared and not individually authorized, don't
 offer them as selectable. A different policy would need agreement and changes
 to security rules.
+
+## Creating and linking teacher accounts (backend operator only)
+
+Public `/api/auth/register` allows STUDENT accounts only. Provision teacher
+accounts from a trusted terminal while connected to the correct development DB:
+
+- `npx.cmd tsx scripts/createTeacher.ts` creates a TEACHER and offers a numbered,
+  **exact** `teacherName` from already imported timetable entries; enter 0 to
+  create a test teacher without linking. Confirm with `ДА` before linking.
+  Account creation and link are one DB transaction (rollback on failure).
+- `npx.cmd tsx scripts/linkTeacherSchedule.ts` links an **existing** TEACHER
+  account to a chosen unassigned timetable name. Useful for test teachers that
+  were created before the import. It refuses to overwrite an existing assignment.
+- Always inspect the intended teacher-name selection before confirming. Names in
+  the imported timetable use initials; do not guess an identity from just a surname.
+- Neither script generates new passwords for existing accounts. The creation
+  script displays a one-time random password: hand it to that teacher securely,
+  never save it to a shared spreadsheet, chat, or source control.
+- These scripts update only entries with an **exact matching `teacherName`**
+  in the currently connected DB. Confirm `DATABASE_URL` before running.
+  Timetable rows with no teacher name require manual source review.
 
 ## Rollout and checks
 
