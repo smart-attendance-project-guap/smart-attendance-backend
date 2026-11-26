@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { readFile } from "node:fs/promises";
 import { prisma } from "../src/prisma.js";
+import { isAttendanceExcluded } from "../src/utils/attendanceDisciplinePolicy.js";
 
 const VALID_GROUPS = ["4514", "4515", "4516", "4517"] as const;
 type InputEntry = {
@@ -51,7 +52,7 @@ async function main() {
   }
 
   // Validate every row before modifying the database.
-  const rows = data.map((raw: unknown, index) => {
+  const validatedRows = data.map((raw: unknown, index) => {
     if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
       throw new Error(`Invalid entry at index ${index}`);
     }
@@ -82,6 +83,8 @@ async function main() {
     };
   });
 
+  const rows = validatedRows.filter((row) => !isAttendanceExcluded(row.discipline));
+
   await prisma.$transaction(async (tx) => {
     for (const row of rows) {
       const unique = {
@@ -98,7 +101,7 @@ async function main() {
     }
   });
 
-  console.log(`Imported/updated ${rows.length} schedule entries for groups 4514–4517.`);
+  console.log(`Imported/updated ${rows.length} attendance-tracked entries; skipped ${validatedRows.length - rows.length} physical education entries.`);
 }
 
 main()
