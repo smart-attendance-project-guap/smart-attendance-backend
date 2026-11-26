@@ -35,6 +35,7 @@ model User {
   webAuthnCredentials WebAuthnCredential[]
   createdAt   DateTime     @default(now())
   telegramId String? @unique
+  scheduleEntries ScheduleEntry[] @relation("ScheduleTeacher")
 }
 
 model Group {
@@ -81,6 +82,8 @@ model Lesson {
   attendances Attendance[]
   telegramNotifications TelegramNotification[]
   lessonGroups LessonGroup[]
+  sourceScheduleEntryId Int? @unique
+  sourceSchedule ScheduleEntry? @relation(fields: [sourceScheduleEntryId], references: [id])
 }
 
 model Attendance {
@@ -179,6 +182,10 @@ model Discipline {
   name String @unique
 }
 model ScheduleEntry {
+  teacherId   Int?
+  teacher     User? @relation("ScheduleTeacher", fields: [teacherId], references: [id])
+  sharedKey   String?
+  launchedLessons Lesson[]
   id          Int      @id @default(autoincrement())
   groupId     Int
   group       Group    @relation(fields: [groupId], references: [id])
