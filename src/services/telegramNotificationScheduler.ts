@@ -85,16 +85,9 @@ export async function scheduleMissedTelegramNotifications(lessonIds?: number[]) 
   const lessons = await prisma.lesson.findMany({
     where: {
       ...(lessonIds !== undefined ? { id: { in: lessonIds } } : {}),
-      OR: [
-        {
-          finishedAt: { gt: windowStart, lte: now },
-          endsAt: { lte: now },
-        },
-        {
-          endsAt: { gt: windowStart, lte: now },
-          finishedAt: { lte: now },
-        },
-      ],
+      // Teacher's finish action is the actual end; do not wait for endsAt.
+      // The scheduled end must not trigger a second missed notification.
+      finishedAt: { gt: windowStart, lte: now },
     },
     select: {
       id: true,
