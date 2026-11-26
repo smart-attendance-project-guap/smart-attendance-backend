@@ -659,6 +659,35 @@ Excel группы сохраняет только студентов выбра
 
 ---
 
+### Локальная тестовая общая лекция (4515 + 4516)
+
+В репозитории есть `scripts/createSharedDemoLesson.ts`, который создаёт одну
+активную тестовую пару для **существующего** преподавателя
+`teacher@example.com` сразу у групп 4515 и 4516. Скрипт работает
+**только с локальной БД `smart_attendance`**, требует явно
+установить `CONFIRM_SHARED_DEMO=teacher@example.com` и проверяет
+отсутствие пересечений по преподавателю, группам и аудитории.
+Другие занятия, преподаватели и отметки не меняются.
+Повторный запуск переиспользует активную общую пару, если она есть.
+
+В PowerShell из каталога Backend (при условии, что `.env`
+настроен на локальную базу, с которой работает Frontend):
+
+```powershell
+Remove-Item Env:DATABASE_URL -ErrorAction SilentlyContinue
+$env:CONFIRM_SHARED_DEMO = "teacher@example.com"
+npx.cmd tsx scripts/createSharedDemoLesson.ts
+Remove-Item Env:CONFIRM_SHARED_DEMO -ErrorAction SilentlyContinue
+```
+
+Скрипт выводит ID пары. Участвуют **обе группы**, а не гостевые
+студенты. После тестовой отметки преподаватель завершает пару:
+`/api/attendance/teacher/lessons/stats` и Excel для обеих групп
+начинают учитывать её сразу после `finishedAt`. Скрипт не создаёт
+отметки за студентов. Если преподавателя нет, занятие не создаётся.
+
+---
+
 ### Статистика по группам
 
 GET /api/attendance/teacher/groups/stats
