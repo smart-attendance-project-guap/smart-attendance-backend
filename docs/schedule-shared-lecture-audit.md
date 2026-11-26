@@ -1,6 +1,8 @@
 # Сверка общих занятий для групп 4514–4517
 Дата проверки: 26.11.2026. Состояние: **сверка структуры завершена, проверка календарных дат по текущей сборке ГУАП ещё нужна**.
 
+> **Operational change, 26.11.2026:** physical education is excluded from Smart Attendance lesson/QR attendance. The historical comparison of 22 shared entries below includes 4 PE entries for traceability. The **active import file** omits these 4 shared entries and the other 8 individual PE entries: **18 shared non-PE entries, 106 total objects, 160 non-PE group-specific rows**. PE teacher identity is not required.
+
 ## Что сверено автоматически
 - Исходник: `data/schedule-4514-4517.json` — 176 строк «группа/занятие».
 - Импортный файл: `data/schedule-4514-4517.import-ready.json` — 118 объектов.
