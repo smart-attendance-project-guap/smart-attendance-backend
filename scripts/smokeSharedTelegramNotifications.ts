@@ -112,19 +112,30 @@ async function main() {
     data: { lessonId: justEnded, studentId: group4515, status: "PENDING" },
   });
 
-  // Teacher finished early: missed notifications start at actual finish.
+  // Early finish before scheduled end must not create missed notifications.
   const finishedEarly = await makeSharedLesson(
     new Date(now - 20 * minute),
     new Date(now + 30 * minute),
     new Date(now - 2 * minute),
   );
 
-  // Teacher finished long ago: scheduled end must not trigger again.
+  // Teacher finished long ago: notify only when scheduled end arrives.
   const endedAfterEarlyFinish = await makeSharedLesson(
     new Date(now - 90 * minute),
     new Date(now - minute),
     new Date(now - 20 * minute),
   );
+
+  // A late teacher finish after scheduled end also triggers the missing check.
+  // REJECTED is an existing mark, so do not send a second 'missed' notice.
+  const finishedLate = await makeSharedLesson(
+    new Date(now - 90 * minute),
+    new Date(now - 20 * minute),
+    new Date(now - 2 * minute),
+  );
+  await prisma.attendance.create({
+    data: { lessonId: finishedLate, studentId: group4515, status: "REJECTED" },
+  });
 
   // Passing only test lesson IDs guarantees we do not queue notifications
   // for unrelated students or lessons in the local database.
@@ -150,7 +161,7 @@ async function main() {
   console.log("PASS: duplicate reminders are not created");
 
   const missed = await scheduleMissedTelegramNotifications(lessonIds);
-  assert(missed === 3, "Expected three missed notifications, got " + missed);
+  assert(missed === 4, "Expected four missed notifications, got " + missed);
 
   const missedRows = await prisma.telegramNotification.findMany({
     where: {
@@ -162,18 +173,22 @@ async function main() {
   const hasMiss = (lessonId: number, userId: number) =>
     missedRows.some((row) => row.lessonId === lessonId && row.userId === userId);
 
-  assert(missedRows.length === 3 &&
+  assert(missedRows.length === 4 &&
     hasMiss(justEnded, group4514) &&
     !hasMiss(justEnded, group4515) &&
-    hasMiss(finishedEarly, group4514) &&
-    hasMiss(finishedEarly, group4515),
-    "Missed notifications must follow actual finish and ignore PENDING marks");
-  console.log("PASS: missed notices follow early finish and exclude PENDING attendance");
+    !hasMiss(finishedEarly, group4514) &&
+    !hasMiss(finishedEarly, group4515) &&
+    hasMiss(endedAfterEarlyFinish, group4514) &&
+    hasMiss(endedAfterEarlyFinish, group4515) &&
+    hasMiss(finishedLate, group4514) &&
+    !hasMiss(finishedLate, group4515),
+    "Missed alerts must wait until planned end and exclude PENDING/REJECTED marks");
+  console.log("PASS: early-finished lessons wait until planned end for missed alerts");
+  console.log("PASS: existing PENDING and REJECTED marks never trigger missed alerts");
 
-  assert(!missedRows.some((row) => row.lessonId === endedAfterEarlyFinish) &&
-    !missedRows.some((row) => row.userId === outsider || row.userId === noTelegram),
-    "The scheduled end must not re-trigger missed notices; outsiders excluded");
-  console.log("PASS: no second notice at scheduled end; outsiders excluded");
+  assert(!missedRows.some((row) => row.userId === outsider || row.userId === noTelegram),
+    "Outsiders or users without Telegram must not receive missed alerts");
+  console.log("PASS: late teacher finish is eligible; outsiders excluded");
 
   const missedAgain = await scheduleMissedTelegramNotifications(lessonIds);
   assert(missedAgain === 0, "Duplicate missed notification was added");
